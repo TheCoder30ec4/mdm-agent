@@ -6,6 +6,7 @@ middleware hides and blocks every tool the harness adds by default (shell `execu
 import inspect as pyinspect
 import json
 import os
+import re
 
 from deepagents import (GeneralPurposeSubagentProfile, HarnessProfile, create_deep_agent,  # Deep Agents harness
                         register_harness_profile)
@@ -215,6 +216,10 @@ class Agent:
 
     def _run(self, history, user_text):
         history.append({"role": "user", "content": user_text})
+        links = _links(user_text)
+        if links:  # the user's own links: download them directly, the model is not involved
+            yield from self._direct(history, links)
+            return
         events, run, final = [], {}, []
         graph = self.build(events, run, checkpointer=InMemorySaver())  # checkpointer: lets the nudge continue the run
         config = {"recursion_limit": self.max_steps * 2 + 1, "configurable": {"thread_id": "run"}}
@@ -225,6 +230,42 @@ class Agent:
                                                 stream_mode="updates", subgraphs=True), events, final)
         if final:  # keep plain turns only; tool traffic lives inside the run
             history.append({"role": "assistant", "content": "\n\n".join(final)})
+
+    def _direct(self, history, links):
+        """A link the user pasted is the user's own decision: inspect it and start the MDM download right away.
+        Still enforced: the SSRF/URL guard (blocked links are refused) and one confirm click for Risky files.
+        ponytail: a message with links skips the model entirely; "this link + find X" needs two messages."""
+        lines = []
+        for url in links[:MAX_PROPOSALS]:
+            yield {"type": "tool_step", "name": "inspect_link", "args": {"url": _trim(url, 200)}}
+            r = self.inspector.inspect_link(url)
+            if "error" in r:
+                lines.append(f"Not downloaded, {_trim(url, 80)}: {r['error']}")
+                continue
+            status = r.get("http_status")
+            if isinstance(status, int) and status >= 400 and status != 416:
+                hint = " (the site is busy or rate-limiting; try again in a few minutes)" if status in (429, 503) else ""
+                lines.append(f"Not downloaded, {_trim(url, 80)}: the server answered HTTP {status}{hint}.")
+                continue
+            p = self.jobs.propose(r, None, "Link you pasted")
+            name = r.get("filename") or r.get("host") or url
+            try:
+                job = self.jobs.approve(p["id"])  # the paste is the approval
+            except Exception as e:
+                if type(e).__name__ != "NeedsConfirm":
+                    raise
+                yield {"type": "proposal", "proposal": p}
+                lines.append(f"{name} looks risky ({'; '.join(r['safety'].get('reasons') or [])}). "
+                             "Press Download on its card if you still want it.")
+                continue
+            yield {"type": "proposal", "proposal": {**p, "status": "approved", "job_id": job["id"]}}
+            size = f"{r['size'] / 1e6:.1f} MB" if isinstance(r.get("size"), int) else "size unknown"
+            lines.append(f"Downloading {name} ({size}) with Mister Download Manager. You'll be told when it finishes.")
+        if len(links) > MAX_PROPOSALS:
+            lines.append(f"Only the first {MAX_PROPOSALS} links were used.")
+        text = "\n".join(lines)
+        yield {"type": "text", "text": text}
+        history.append({"role": "assistant", "content": text})
 
     def _relay(self, stream, events, final):
         """LangGraph updates -> chat events (main-agent text, every tool step, proposals)."""
@@ -243,6 +284,14 @@ class Agent:
                                "args": {k: _trim(v, 200) for k, v in (c.get("args") or {}).items()}}
             while events:
                 yield events.pop(0)
+
+
+_LINK = re.compile(r"""(?:https?|ftps?)://[^\s<>"']+|magnet:\?[^\s<>"']+""", re.I)
+
+
+def _links(text):
+    """URLs and magnet links in the user's own message (trailing punctuation dropped, duplicates removed)."""
+    return list(dict.fromkeys(m.rstrip(".,;:!?)]}") for m in _LINK.findall(text or "")))
 
 
 def _schema(fn):

@@ -71,8 +71,16 @@ class FakeJobs:
     def get_job(self, job_id):
         raise KeyError(job_id)
 
-    def approve(self, *a, **k):  # must never be called by the agent
-        self.started.append(a)
+    def approve(self, pid, confirm_risky=False):  # only the pasted-link path may call this
+        report = self.proposed[int(pid[2:]) - 1][0]
+        if report["safety"]["level"] == "risky" and not confirm_risky:
+            raise NeedsConfirm(pid)
+        self.started.append(pid)
+        return {"id": f"j_{len(self.started):08d}", "proposal_id": pid, "state": "queued"}
+
+
+class NeedsConfirm(Exception):
+    pass
 
 
 class FakeWeb:
@@ -89,7 +97,11 @@ class FakeInspect:
 
     def inspect_link(self, url):
         self.calls += 1
-        return {"error": "blocked: private address"} if self.error else dict(REPORT, url=url)
+        if self.error or "127.0.0.1" in url:
+            return {"error": "blocked: private address"}
+        if url.endswith(".exe"):
+            return dict(REPORT, url=url, filename="setup.exe", safety={"level": "risky", "reasons": ["executable"], "skipped": []})
+        return dict(REPORT, url=url, filename=url.rsplit("/", 1)[-1], size=5_000_000)
 
 
 def make(script, inspect_error=False, **kw):
@@ -251,3 +263,42 @@ def test_no_nudge_when_nothing_inspected():
     a, m = make([AIMessage(content="Hello")])
     evs, _ = run(a)
     assert types(evs) == ["text", "done"] and len(m.seen) == 1
+
+
+def test_pasted_link_downloads_directly_without_the_model():
+    a, m = make([AIMessage(content="I'm sorry, but I can't help with that.")])  # model would refuse; never asked
+    evs, hist = run(a, "https://archive.org/download/x/film.mp4")
+    assert m.seen == [] and a.jobs.started == ["p_00000001"]
+    prop = next(e for e in evs if e["type"] == "proposal")["proposal"]
+    assert prop["status"] == "approved" and prop["job_id"] == "j_00000001"
+    assert "Downloading film.mp4 (5.0 MB)" in next(e for e in evs if e["type"] == "text")["text"]
+    assert types(evs)[-1] == "done" and hist[-1]["role"] == "assistant"
+
+
+def test_pasted_risky_link_waits_for_the_button():
+    a, m = make([])
+    evs, _ = run(a, "get this https://example.com/setup.exe please")
+    assert a.jobs.started == [] and next(e for e in evs if e["type"] == "proposal")["proposal"]["status"] == "pending"
+    assert "looks risky" in next(e for e in evs if e["type"] == "text")["text"]
+
+
+def test_pasted_blocked_link_is_not_downloaded():
+    a, m = make([])
+    evs, _ = run(a, "http://127.0.0.1:8000/api/jobs")
+    assert a.jobs.started == [] and a.jobs.proposed == [] and "proposal" not in types(evs)
+    assert "Not downloaded" in next(e for e in evs if e["type"] == "text")["text"]
+
+
+def test_several_links_and_magnet_are_extracted():
+    from agent.agent import _links
+    assert _links("a https://x.org/a.iso, b magnet:?xt=urn:btih:abc and https://x.org/a.iso.") == \
+        ["https://x.org/a.iso", "magnet:?xt=urn:btih:abc"]
+    assert _links("find Nosferatu 1922") == []
+
+
+def test_pasted_link_with_server_error_is_not_started():
+    a, m = make([])
+    a._inspect.inspect_link = lambda url: dict(REPORT, url=url, filename="x.txt", http_status=503)
+    evs, _ = run(a, "https://www.gutenberg.org/cache/epub/84/pg84.txt")
+    assert a.jobs.started == [] and a.jobs.proposed == []
+    assert "HTTP 503" in next(e for e in evs if e["type"] == "text")["text"]

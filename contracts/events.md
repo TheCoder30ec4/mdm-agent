@@ -15,7 +15,7 @@ All bodies are JSON. Errors: `{"detail": "message"}` with the status below.
 | `GET /api/events` | | `text/event-stream` of **global events**, with a comment heartbeat `: ping` every 15 s |
 | `GET /api/health` | | `{"ok": true, "groq_key": bool, "firecrawl": bool (reachable), "mdm_cli": bool}` (booleans only, never values) |
 
-**Only `approve` starts a download.** No other endpoint and no agent tool may.
+**Only `approve` starts a download.** No other endpoint and no agent tool may. Exception: links in the user's own chat message (http/https/ftp/magnet) are inspected and approved in code by `Agent.run` (no model call), unless blocked, answered with HTTP >= 400, or rated risky (then a pending card).
 
 ## SSE framing
 Each event: `data: <one-line JSON>\n\n`.

@@ -269,6 +269,7 @@ def _inspect(url: str) -> dict:
     # --- response heuristics
     ctype = None
     if resp is not None:
+        rep["http_status"] = resp.status_code  # the direct-download path refuses to start on a server error
         if resp.status_code >= 400 and resp.status_code != 416:
             add("caution", f"The server answered HTTP {resp.status_code}; the link may not work.")
         ctype = resp.headers.get("content-type", "").split(";")[0].strip().lower() or None

@@ -14,6 +14,9 @@ with reasons. Nothing downloads until you press **Download**. When it finishes y
 - Search and page previews: [Firecrawl](https://github.com/firecrawl/firecrawl), **self-hosted in Docker** on `127.0.0.1:3002`.
 - Downloads: MDM's headless CLI (`misterdownloadmanager-cli`), HTTP(S), FTP and magnet links.
 
+**Paste a link** (http, https, ftp or magnet) and it downloads right away through MDM: the model is not involved, the link still goes through the URL/SSRF guard, links whose server answers an error are reported instead of started, and files rated *Risky* wait for one click.
+**Describe what you want** and the agents search; the results come back as cards you approve.
+
 The model has no tool that starts a download. It can only create a *proposal*; only the Download button's HTTP call
 (`POST /api/proposals/{id}/approve`) starts a job. Safety checks are heuristics, not a guarantee: a clean badge never means virus-free.
 
