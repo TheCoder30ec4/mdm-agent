@@ -23,6 +23,11 @@ case "$cmd" in
 PORT=3002
 USE_DB_AUTHENTICATION=false
 SEARXNG_ENDPOINT=http://searxng:8080
+# laptop-sized (upstream defaults are 8 workers/queue and 5 browsers, which got OOM-killed on a 16 GB Mac)
+NUM_WORKERS_PER_QUEUE=2
+MAX_CONCURRENT_JOBS=2
+BROWSER_POOL_SIZE=2
+CRAWL_CONCURRENT_REQUESTS=4
 EOF
 
     [ -f "$DIR/searxng/settings.yml" ] || cat > "$DIR/searxng/settings.yml" <<EOF
@@ -41,6 +46,7 @@ services:
   api:
     image: ghcr.io/firecrawl/firecrawl:latest
     build: !reset null
+    restart: unless-stopped
     ports: !override
       - "127.0.0.1:3002:3002"
   playwright-service:
