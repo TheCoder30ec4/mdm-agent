@@ -1,0 +1,89 @@
+"""Firecrawl search + scrape. Tolerates dict or object responses across SDK versions."""
+import os
+
+import httpx
+
+
+class WebError(Exception):
+    pass
+
+
+def _client():
+    # Self-hosted Firecrawl by default (scripts/firecrawl_local.sh). A self-hosted API ignores the key;
+    # set FIRECRAWL_API_URL + FIRECRAWL_API_KEY to use another instance or the cloud.
+    url = os.environ.get("FIRECRAWL_API_URL") or "http://localhost:3002"
+    key = os.environ.get("FIRECRAWL_API_KEY") or "local"
+    try:
+        from firecrawl import Firecrawl
+    except ImportError:
+        from firecrawl import FirecrawlApp as Firecrawl  # older SDKs
+    return Firecrawl(api_key=key, api_url=url, max_retries=1)
+
+
+def _g(obj, name, default=None):
+    """Read a field from a dict or an object."""
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        v = obj.get(name)
+    else:
+        v = getattr(obj, name, None)
+    return default if v is None else v
+
+
+def search(query: str, limit: int = 5) -> list[dict]:
+    try:
+        res = _client().search(query, limit=limit)
+        # v2: SearchData(.web); v1: {"data": [...]} or a plain list
+        items = _g(res, "web") or _g(res, "data") or (res if isinstance(res, list) else [])
+        out = []
+        for it in items:
+            meta = _g(it, "metadata")
+            url = _g(it, "url") or _g(meta, "url")
+            if not url:
+                continue
+            out.append({
+                "title": _g(it, "title") or _g(meta, "title") or "",
+                "url": url,
+                "description": _g(it, "description") or _g(meta, "description") or "",
+            })
+        return out[:limit]
+    except WebError:
+        raise
+    except Exception as e:
+        raise WebError(f"search failed: {type(e).__name__}: {e}") from None
+
+
+def _guard(url: str) -> None:
+    """Only public http(s) URLs: a prompt-injected page must not steer a scrape at the LAN or file://."""
+    from agent import inspect, mdm  # inspect imports web at module level
+    if not isinstance(url, str) or url.split(":", 1)[0].lower() not in ("http", "https"):
+        raise WebError("blocked: only http and https URLs can be scraped")
+    try:
+        mdm._check_source(url)
+        u = httpx.URL(url)
+        # ponytail: checks the IPs we resolve now; Firecrawl resolves again and follows redirects itself
+        # (DNS rebinding / redirect-to-LAN). Pin at the Firecrawl side if that matters.
+        inspect._safe_ips(u.raw_host.decode("ascii"), u.port or (443 if u.scheme == "https" else 80))
+    except (mdm.MdmError, inspect.Blocked) as e:
+        raise WebError(f"blocked: {e}") from None
+
+
+def scrape(url: str, max_chars: int = 8000) -> dict:
+    _guard(url)
+    try:
+        res = _client().scrape(url, formats=["markdown"])
+        res = _g(res, "data", res)  # v1 wraps in "data" on some versions
+        meta = _g(res, "metadata", {})
+        text = _g(res, "markdown", "") or ""
+        return {
+            "url": _g(meta, "url") or _g(meta, "source_url") or _g(meta, "sourceURL") or url,
+            "title": _g(meta, "title") or _g(meta, "og_title") or _g(meta, "ogTitle"),
+            "description": _g(meta, "description") or _g(meta, "og_description") or _g(meta, "ogDescription"),
+            "image": _g(meta, "og_image") or _g(meta, "ogImage"),
+            "text": text[:max_chars],
+        }
+    except WebError:
+        raise
+    except Exception as e:
+        raise WebError(f"scrape failed: {type(e).__name__}: {e}") from None
