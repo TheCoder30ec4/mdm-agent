@@ -63,7 +63,7 @@ State persists to `DATA_DIR/jobs.json` (atomic write). On startup, jobs left `ru
 ## agent/agent.py (owner: core): Deep Agents on LangGraph
 ```python
 class Agent:
-    def __init__(self, jobs: Jobs, llm=None, model: str | None = None, max_steps: int = 15): ...
+    def __init__(self, jobs: Jobs, llm=None, model: str | None = None, max_steps: int = 25): ...
     def build(self, events: list) -> CompiledStateGraph   # deepagents.create_deep_agent(...) for one run
     def run(self, history: list[dict], user_text: str) -> Iterator[dict]   # yields chat events (contracts/events.md)
 ```
@@ -87,7 +87,7 @@ Tool names and args are exact. **There is no tool that starts a download.**
 
 Tool errors (WebError, MdmError, blocked URL) are returned to the model as `{"error": "..."}`, never raised. Loop ends when the model answers without tool calls or after `max_steps` (then yields an `error` event). System prompt (agent/prompts.py `SYSTEM_PROMPT`) must say:
 1. Search broadly, then `inspect_link` the best candidate(s) before proposing; prefer official/legal sources (Internet Archive, public domain, Creative Commons, official free releases, content the user owns); decline to fetch copyrighted material from infringing sources and say why.
-2. Call `propose_download` for at most 3 candidates per request, then tell the user what each is and its safety verdict, and that they decide with the Download button.
+2. Call `propose_download` for at most 10 candidates per request, then tell the user what each is and its safety verdict, and that they decide with the Download button.
 3. Never say a download has started or finished; only jobs the user approves run, and the UI reports them.
 4. When the user pastes a link, inspect it first. Keep replies short.
 

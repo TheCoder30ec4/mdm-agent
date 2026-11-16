@@ -23,7 +23,7 @@ from agent.prompts import RESEARCHER_PROMPT, SYSTEM_PROMPT
 
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 MAX_TOOL_CHARS = 6000
-MAX_PROPOSALS = 3
+MAX_PROPOSALS = 10  # matches the system prompt
 MAIN_TOOLS = frozenset({"inspect_link", "propose_download", "job_status", "list_jobs", "task"})
 RESEARCH_TOOLS = frozenset({"web_search", "web_scrape"})
 STEP_NAMES = {"task": "research"}  # what the UI shows for the sub-agent hand-off
@@ -92,7 +92,7 @@ def _gate(allowed):
 
 
 class Agent:
-    def __init__(self, jobs, llm=None, model=None, max_steps=15):
+    def __init__(self, jobs, llm=None, model=None, max_steps=25):
         self.jobs = jobs
         self._llm = llm  # any LangChain chat model; default is Groq (created lazily)
         self.model = model or os.environ.get("GROQ_MODEL") or DEFAULT_MODEL
@@ -192,7 +192,7 @@ class Agent:
         researcher = {
             "name": "researcher",
             "description": "Searches the web and reads pages to find candidate download links for a request. "
-                           "Give it what the user wants; it returns up to 5 candidates with direct file URLs.",
+                           "Give it what the user wants; it returns up to 10 candidates with direct file URLs.",
             "system_prompt": RESEARCHER_PROMPT,
             "tools": research,
             "middleware": [_gate(RESEARCH_TOOLS)],
