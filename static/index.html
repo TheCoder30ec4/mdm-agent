@@ -264,7 +264,33 @@ function updateProgress(c, job) {
   const { bar, txt } = c.refs;
   if (job.size) { bar.max = job.size; bar.value = job.downloaded || 0; } else { bar.removeAttribute("value"); }
   const left = fmtBytes(job.downloaded || 0) + (job.size ? " of " + fmtBytes(job.size) : "");
-  txt.textContent = (job.state === "queued" ? "Queued. " : "") + left + (job.speed ? " · " + fmtSpeed(job.speed) : "");
+  const parts = [(job.state === "queued" ? "Queued. " : "") + left];
+  if (job.speed) parts.push(fmtSpeed(job.speed));
+  const eta = etaText(job);
+  if (eta) parts.push(eta);
+  const torrent = job.peers != null || job.phase != null;
+  const n = (k, one, many) => k + " " + (k === 1 ? one : many);
+  if (torrent) parts.push(n(job.peers || 0, "peer", "peers") + " connected" + (job.peers_seen ? ", " + job.peers_seen + " found" : ""));
+  else if (job.connections) parts.push(n(job.connections, "connection", "connections"));
+  txt.textContent = parts.join(" · ") + slowHint(job, torrent);
+}
+
+// Time left from the current speed; hidden until both size and speed are known.
+function etaText(job) {
+  if (job.state !== "running" || !job.size || !job.speed) return "";
+  const s = Math.max(0, (job.size - (job.downloaded || 0)) / job.speed);
+  if (s < 60) return Math.ceil(s) + " s left";
+  if (s < 3600) return Math.round(s / 60) + " min left";
+  return Math.floor(s / 3600) + " h " + Math.round((s % 3600) / 60) + " min left";
+}
+
+// Why it is slow, in plain words, when MDM's numbers say so.
+function slowHint(job, torrent) {
+  if (job.state !== "running" || job.speed) return "";
+  if (torrent) return job.peers ? ". Connected to peers, waiting for data." :
+    ". Waiting for peers: few or no people are sharing this torrent right now, so it can't go faster.";
+  return job.downloaded ? ". Stalled: the server stopped sending data (it may be limiting or blocking this connection)."
+    : ". Connecting to the server...";
 }
 
 function footError(c, msg) {

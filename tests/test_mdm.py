@@ -24,7 +24,7 @@ def test_done_and_progress(env):
     events = []
     out = mdm.run("https://example.com/f.bin", str(env / "dl" / "j1"), on_event=events.append)
     assert out["size"] == 100 and Path(out["path"]).read_bytes() == b"x" * 100
-    assert events[-1] == {"downloaded": 100, "size": 100, "speed": 10}
+    assert events[-1] == {"downloaded": 100, "size": 100, "speed": 10, "connections": 4}
     assert len(events) == 3
     assert json.loads((env / "args.json").read_text())[:3] == ["--json", "get", "https://example.com/f.bin"]
 
@@ -117,3 +117,21 @@ def test_missing_cli(env, monkeypatch):
         mdm.run("https://example.com/f", str(env / "dl" / "j"))
     with pytest.raises(mdm.MdmError):
         mdm.torrent_info("magnet:?xt=urn:btih:abc")
+
+
+def test_get_uses_configured_connections(monkeypatch):
+    seen = {}
+
+    class P:
+        def __init__(self, args, **kw):
+            seen["args"] = args
+            raise OSError("stop here")
+    monkeypatch.setattr(mdm.subprocess, "Popen", P)
+    for env, want in ((None, "16"), ("32", "32"), ("999", "128"), ("x", "16")):
+        if env is None:
+            monkeypatch.delenv("MDM_CONNECTIONS", raising=False)
+        else:
+            monkeypatch.setenv("MDM_CONNECTIONS", env)
+        with pytest.raises(mdm.MdmError):
+            mdm.run("https://example.com/a.iso", "j1")
+        assert seen["args"][-2:] == ["-c", want]

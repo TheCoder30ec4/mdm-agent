@@ -231,7 +231,8 @@ def create_app(jobs=None, agent=None) -> FastAPI:
     # ---- health ----
     @app.get("/api/health")
     def health():
-        mdm = os.environ.get("MDM_CLI") or "./vendor/mdm/misterdownloadmanager-cli"
+        from agent.mdm import cli_path
+        mdm = cli_path()
         return {
             "ok": True,
             "groq_key": bool(os.environ.get("GROQ_API_KEY")),

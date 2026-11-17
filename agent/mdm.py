@@ -15,8 +15,20 @@ class MdmError(Exception):
     pass
 
 
+# built from the fork (submodule) by scripts/build_mdm.sh; build output lives outside iCloud-synced folders
+FORK_CLI = os.path.expanduser("~/Library/Caches/mdm-agent/target/release/misterdownloadmanager-cli")
+RELEASE_CLI = "./vendor/mdm/misterdownloadmanager-cli"  # prebuilt upstream release, fallback
+
+
+def cli_path() -> str:
+    """MDM_CLI if set, else the CLI built from the fork, else the prebuilt release."""
+    # the CLI is only a launcher: it needs the app's program next to it, so a half-finished build is skipped
+    fork_ready = all(os.access(p, os.X_OK) for p in (FORK_CLI, os.path.join(os.path.dirname(FORK_CLI), "misterdownloadmanager")))
+    return os.environ.get("MDM_CLI") or (FORK_CLI if fork_ready else RELEASE_CLI)
+
+
 def _cli() -> str:
-    return os.environ.get("MDM_CLI") or "./vendor/mdm/misterdownloadmanager-cli"
+    return cli_path()
 
 
 def _check_source(source: str) -> str:
@@ -57,6 +69,20 @@ def _confine(dest_dir: str, download_dir: str | None = None) -> Path:
     return p
 
 
+# what MDM's --json progress lines carry: http (connections) and torrent (phase, peers, peers_seen)
+PROGRESS_KEYS = ("downloaded", "size", "speed", "connections", "phase", "peers", "peers_seen")
+
+
+def _connections() -> int:
+    """Parallel connections per http download. 16 measured ~45% faster than MDM's default 8 on archive.org
+    (per-connection throttled); 32 gave little more. MDM allows 1-128."""
+    try:
+        n = int(os.environ.get("MDM_CONNECTIONS") or 16)
+    except ValueError:
+        n = 16
+    return min(max(n, 1), 128)
+
+
 def _err_text(obj: dict) -> str:
     return str(obj.get("error") or obj.get("message") or "download failed")
 
@@ -73,7 +99,7 @@ def run(source: str, dest_dir: str, files: list[int] | None = None, on_event=Non
         if files:
             args += ["--files", ",".join(str(i) for i in files)]
     else:
-        args = [_cli(), "--json", "get", source, "-o", str(dest)]
+        args = [_cli(), "--json", "get", source, "-o", str(dest), "-c", str(_connections())]
     try:
         proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 stdin=subprocess.DEVNULL)
@@ -115,7 +141,7 @@ def run(source: str, dest_dir: str, files: list[int] | None = None, on_event=Non
             kind = ev.get("event")
             if kind == "progress" and on_event:
                 try:
-                    on_event({k: ev.get(k) for k in ("downloaded", "size", "speed")})
+                    on_event({k: ev[k] for k in PROGRESS_KEYS if ev.get(k) is not None})
                 except Exception:
                     pass  # a broken callback must not kill the download
             elif kind == "done":

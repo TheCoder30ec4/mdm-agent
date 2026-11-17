@@ -1,10 +1,10 @@
 .env
-.venv/
+.venv
 __pycache__/
 *.pyc
 .pytest_cache/
-vendor/
-downloads/
-data/
+vendor
+downloads
+data
 .claude/
 .DS_Store

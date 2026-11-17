@@ -1,0 +1,3 @@
+[submodule "misterdownloadmanager"]
+	path = misterdownloadmanager
+	url = https://github.com/TheCoder30ec4/misterdownloadmanager.git

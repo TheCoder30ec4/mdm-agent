@@ -183,7 +183,7 @@ class Jobs:
 
         def on_event(ev):
             with self._lock:
-                for k in ("downloaded", "size", "speed"):
+                for k in ("downloaded", "size", "speed", "connections", "phase", "peers", "peers_seen"):
                     if ev.get(k) is not None:
                         job[k] = ev[k]
                 now = time.monotonic()

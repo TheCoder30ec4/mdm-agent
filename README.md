@@ -1,7 +1,7 @@
 # MDM Agent
 
 A chatbot that finds things on the web and downloads them with
-[Mister Download Manager](https://github.com/anefzaoui/misterdownloadmanager) (MDM, [fork](https://github.com/TheCoder30ec4/misterdownloadmanager)), **only after you approve**.
+[Mister Download Manager](https://github.com/anefzaoui/misterdownloadmanager) (MDM). The engine is built from [the fork](https://github.com/TheCoder30ec4/misterdownloadmanager), included here as the `misterdownloadmanager/` git submodule, **only after you approve**.
 
 You paste a link or describe what you want. The agent searches (self-hosted Firecrawl), inspects the best candidates, and
 replies with a **preview card**: what it is, the source, size, type, files, and a safety badge (`Looks OK` / `Caution` / `Risky`)
@@ -12,7 +12,8 @@ with reasons. Nothing downloads until you press **Download**. When it finishes y
   The harness's built-in shell and file tools are hidden from the model and refused at dispatch.
 - Brain: `openai/gpt-oss-120b` on [Groq](https://groq.com) via `langchain-groq` (too big to run on a laptop). The agents run locally.
 - Search and page previews: [Firecrawl](https://github.com/firecrawl/firecrawl), **self-hosted in Docker** on `127.0.0.1:3002`.
-- Downloads: MDM's headless CLI (`misterdownloadmanager-cli`), HTTP(S), FTP and magnet links.
+- Downloads: MDM's headless CLI (`misterdownloadmanager-cli`), built from the fork: HTTP(S) and FTP with 16 parallel connections (`MDM_CONNECTIONS`), and magnet links.
+- Progress shows speed, time left, connections (or torrent peers) and why a download is slow.
 
 **Paste a link** (http, https, ftp or magnet) and it downloads right away through MDM: the model is not involved, the link still goes through the URL/SSRF guard, links whose server answers an error are reported instead of started, and files rated *Risky* wait for one click.
 **Describe what you want** and the agents search; the results come back as cards you approve.
@@ -24,7 +25,9 @@ The model has no tool that starts a download. It can only create a *proposal*; o
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env            # then add GROQ_API_KEY (and optionally VIRUSTOTAL_API_KEY)
-bash scripts/install_mdm.sh     # downloads the MDM macOS release, verifies SHA-256, copies the CLI into vendor/mdm
+git submodule update --init     # the MDM fork, in ./misterdownloadmanager
+bash scripts/build_mdm.sh       # builds MDM from the fork (release mode; needs Rust: brew install rustup && rustup default stable)
+# or, without Rust: bash scripts/install_mdm.sh  (prebuilt upstream release into vendor/mdm, used as a fallback)
 bash scripts/firecrawl_local.sh up    # needs Docker Desktop; first run pulls several GB. `down` stops it
 .venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8000
 ```
