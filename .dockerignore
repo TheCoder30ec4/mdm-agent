@@ -1,0 +1,14 @@
+.git
+.venv*
+data*
+downloads*
+vendor
+.env
+**/__pycache__
+.claude
+.hallmark
+misterdownloadmanager/target
+tests
+# iCloud duplicates
+* 2
+**/* 2

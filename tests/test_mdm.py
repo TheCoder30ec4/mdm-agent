@@ -135,3 +135,103 @@ def test_get_uses_configured_connections(monkeypatch):
         with pytest.raises(mdm.MdmError):
             mdm.run("https://example.com/a.iso", "j1")
         assert seen["args"][-2:] == ["-c", want]
+
+
+# ---- fuller MDM: checksum, dns, video mode, resume, video-info ----
+
+def argv(env):
+    return json.loads((env / "args.json").read_text())
+
+
+def test_checksum_and_dns_go_to_get(env, monkeypatch):
+    mdm.run("https://example.com/f.bin", str(env / "dl" / "j"), checksum="sha256:" + "ab" * 32)
+    a = argv(env)
+    assert a[a.index("--checksum") + 1] == "sha256:" + "ab" * 32 and "--dns" not in a
+    monkeypatch.setenv("MDM_DNS", "cloudflare-https")
+    mdm.run("https://example.com/f.bin", str(env / "dl" / "j"))
+    a = argv(env)
+    assert a[a.index("--dns") + 1] == "cloudflare-https" and "--checksum" not in a
+    monkeypatch.setenv("MDM_DNS", " ")  # blank: not passed
+    mdm.run("https://example.com/f.bin", str(env / "dl" / "j"))
+    assert "--dns" not in argv(env)
+
+
+def test_checksum_mismatch_is_a_job_error(env, monkeypatch):
+    monkeypatch.setenv("FAKE_MDM_MODE", "error")  # the CLI reports a mismatch as an error line
+    with pytest.raises(mdm.MdmError, match="connection reset"):
+        mdm.run("https://example.com/f.bin", str(env / "dl" / "j"), checksum="ab" * 16)
+
+
+@pytest.mark.parametrize("kw", [{"checksum": "not hex"}, {"checksum": "sha256:zz"}, {"checksum": "--dns"}, {"mode": "audio"},
+                                {"height": 0}, {"height": "720"}, {"height": 99999}, {"height": True},
+                                {"subs": "-h"}, {"subs": "en fr"}, {"subs": "en;ls"}, {"subs": ""}])
+def test_bad_options_never_spawn(env, kw):
+    with pytest.raises(mdm.MdmError):
+        mdm.run("https://example.com/f", str(env / "dl" / "j"), **kw)
+    assert not (env / "args.json").exists()
+
+
+def test_video_mode(env, monkeypatch):
+    monkeypatch.setenv("MDM_DNS", "quad9-tls")
+    out = mdm.run("https://video.example/watch?v=1", str(env / "dl" / "j"), mode="video", height=720, subs="en,fr")
+    a = argv(env)
+    assert a[:3] == ["--json", "video-get", "https://video.example/watch?v=1"]
+    assert a[a.index("--quality") + 1] == "720" and a[a.index("--subs") + 1] == "en,fr"
+    assert a[a.index("-o") + 1] == str(env / "dl" / "j") and "-c" in a and "--dns" not in a  # video-get has no --dns
+    assert out["path"].endswith("video.mp4") and Path(out["path"]).is_file()
+    mdm.run("https://video.example/watch?v=1", str(env / "dl" / "j"), mode="video")
+    a = argv(env)
+    assert "--quality" not in a and "--subs" not in a
+    with pytest.raises(mdm.MdmError):
+        mdm.run("magnet:?xt=urn:btih:abc", str(env / "dl" / "j"), mode="video")
+
+
+def test_resume(env):
+    dest = env / "dl" / "j"
+    dest.mkdir(parents=True)
+    (dest / "f.bin").write_bytes(b"partial")
+    state = dest / "f.bin.mdm.json"
+    state.write_text("{}")
+    events = []
+    out = mdm.run("https://example.com/f.bin", str(dest), on_event=events.append, resume=str(state))
+    a = argv(env)
+    assert a[:3] == ["--json", "resume", str(state.resolve())] and a[-2:] == ["-c", "16"]
+    assert "-o" not in a and "--checksum" not in a
+    assert out["size"] == 100 and Path(out["path"]).read_bytes() == b"r" * 100 and events
+
+
+@pytest.mark.parametrize("where", ["outside", "wrong_name", "missing", "sibling_job"])
+def test_resume_state_file_is_confined(env, where):
+    dest = env / "dl" / "j"
+    dest.mkdir(parents=True)
+    (env / "dl" / "other").mkdir()
+    state = {"outside": env / "x.mdm.json", "wrong_name": dest / "f.json", "missing": dest / "nope.mdm.json",
+             "sibling_job": env / "dl" / "other" / "f.mdm.json"}[where]
+    if where != "missing":
+        state.write_text("{}")
+    with pytest.raises(mdm.MdmError):
+        mdm.run("https://example.com/f.bin", str(dest), resume=str(state))
+    assert not (env / "args.json").exists()
+
+
+def test_video_info(env):
+    info = mdm.video_info("https://video.example/watch?v=1")
+    assert info == {"title": "Cat video", "heights": [1080, 720],
+                    "subtitles": [{"code": "en", "name": "English", "automatic": True}]}
+    assert argv(env) == ["--json", "video-info", "https://video.example/watch?v=1"]
+
+
+def test_video_info_cases(env, monkeypatch):
+    monkeypatch.setenv("FAKE_MDM_VIDEO", "list")
+    assert mdm.video_info("https://video.example/pl") is None
+    monkeypatch.setenv("FAKE_MDM_VIDEO", "missing")
+    with pytest.raises(mdm.MdmError, match="yt-dlp is not installed"):
+        mdm.video_info("https://video.example/v")
+    monkeypatch.setenv("FAKE_MDM_VIDEO", "novideo")
+    with pytest.raises(mdm.MdmError, match="Unsupported URL"):
+        mdm.video_info("https://example.com/")
+    monkeypatch.setenv("MDM_CLI", str(env / "nope"))
+    with pytest.raises(mdm.MdmError):
+        mdm.video_info("https://example.com/")
+    with pytest.raises(mdm.MdmError):
+        mdm.video_info("file:///etc/passwd")

@@ -159,16 +159,21 @@ class Agent:
             r = self._report(url, cache)
             return r if "error" in r else _short_report(r)
 
-        def propose_download(url: str, files: list[int] | None = None, note: str = ""):
+        def propose_download(url: str, files: list[int] | None = None, note: str = "", checksum: str | None = None,
+                             mode: str | None = None, height: int | None = None, subs: str | None = None):
             """Propose a download to the user for approval. Does NOT start it. Takes a direct file URL or magnet link.
-            Safety data comes from the inspection, not from you. files: torrent file indexes (empty means all)."""
+            Safety data comes from the inspection, not from you. files: torrent file indexes (empty means all).
+            Optional: checksum ("sha256:<hex>" the file must match); mode "video" for a web page whose inspect_link
+            report has `video` (downloaded as a video: height such as 720, subs such as "en,fr")."""
             if state["proposals"] >= MAX_PROPOSALS:
                 return {"error": f"at most {MAX_PROPOSALS} proposals per request"}
             report = self._report(url, cache)  # never model-supplied safety data
             if "error" in report:
                 return report
             idx = [i for i in (files or []) if isinstance(i, int) and not isinstance(i, bool)]
-            p = self.jobs.propose(report, idx or None, str(note or "")[:500])
+            extra = {k: v for k, v in (("checksum", checksum), ("mode", mode), ("height", height), ("subs", subs))
+                     if v not in (None, "")}  # only what the model set, so plain proposals stay as before
+            p = self.jobs.propose(report, idx or None, str(note or "")[:500], **extra)
             state["proposals"] += 1
             events.append({"type": "proposal", "proposal": p})
             return {"proposal_id": p["id"], "status": "pending"}
@@ -247,7 +252,8 @@ class Agent:
                 hint = " (the site is busy or rate-limiting; try again in a few minutes)" if status in (429, 503) else ""
                 lines.append(f"Not downloaded, {_trim(url, 80)}: the server answered HTTP {status}{hint}.")
                 continue
-            p = self.jobs.propose(r, None, "Link you pasted")
+            # a page that holds a video (inspect found `video` info) is downloaded as a video, not saved as HTML
+            p = self.jobs.propose(r, None, "Link you pasted", **({"mode": "video"} if r.get("video") else {}))
             name = r.get("filename") or r.get("host") or url
             try:
                 job = self.jobs.approve(p["id"])  # the paste is the approval

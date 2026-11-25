@@ -307,6 +307,7 @@ def _inspect(url: str) -> dict:
     # or local paths, so it is downloaded with `get` like any other file)
     if ctype in ("text/html", "application/xhtml+xml"):
         _preview(rep, final, skipped)
+        _video(rep, final, skipped)
 
     _virustotal(url, final, add, skipped)
     return _finish(rep, reasons, skipped)
@@ -340,6 +341,19 @@ def _preview(rep, url, skipped):
         skipped.append(f"Page preview: {e}")
         return
     rep["title"], rep["description"], rep["image"] = s.get("title"), s.get("description"), s.get("image")
+
+
+def _video(rep, url, skipped):
+    """A page `video-info` understands gets `video` info (title, heights, subtitles): it can be downloaded in
+    video mode. Anything else (not a video page, CLI trouble) is silent, only a missing yt-dlp is worth saying."""
+    try:
+        info = mdm.video_info(url)
+    except mdm.MdmError as e:
+        if "yt-dlp is not installed" in str(e):
+            skipped.append("yt-dlp is not installed: run misterdownloadmanager-cli install-ytdlp")
+        return
+    if info:
+        rep["video"] = info
 
 
 def _virustotal(url, final, add, skipped):

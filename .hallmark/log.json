@@ -1,0 +1,28 @@
+[
+ {
+  "mode": "redesign",
+  "depth": "full",
+  "scope": "app",
+  "shape": "app screen",
+  "theme": "console",
+  "axes": "dark/grotesk-sans/chromatic-amber",
+  "hero": "none (app)",
+  "nav": "top bar, name and two tabs",
+  "footer": "none (app)",
+  "imagery": "product only, no photographs",
+  "photos": [],
+  "entry": "static/index.html",
+  "fingerprint": "app/console/tabs/verdict-record/table",
+  "sections": [
+   "chat thread",
+   "preview record",
+   "downloads table"
+  ],
+  "signature": "the preview record, verdict band above measured facts",
+  "waived": [
+   "39b"
+  ],
+  "prompt": "a local download assistant: chat to find files, preview their safety, approve, watch progress",
+  "date": "2026-11-25"
+ }
+]

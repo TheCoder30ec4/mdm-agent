@@ -9,6 +9,12 @@ DNS = {"example.com": ["93.184.216.34"], "evil.test": ["10.0.0.5"], "rebind.test
        "xn--pple-43d.com": ["1.2.3.4"], "files.net": ["5.6.7.8"]}
 
 
+@pytest.fixture(autouse=True)
+def no_video_cli(monkeypatch):
+    """HTML pages are probed with `video-info`: tests never spawn the real CLI."""
+    monkeypatch.setattr(mdm, "video_info", lambda url: None)
+
+
 class Routes(dict):
     seen: list
 
@@ -322,6 +328,41 @@ def test_html_preview_with_key(net, monkeypatch):
     assert (r["title"], r["description"], r["image"]) == ("T", "D", "https://i/x.png")
     monkeypatch.setattr(web, "scrape", lambda u, max_chars=0: (_ for _ in ()).throw(web.WebError("down")))
     assert any("down" in s for s in I.inspect_link("https://example.com/p")["safety"]["skipped"])
+
+
+def test_video_page_gets_video_info(net, monkeypatch):
+    seen = []
+    info = {"title": "Cat", "heights": [1080, 720], "subtitles": []}
+    monkeypatch.setattr(mdm, "video_info", lambda u: seen.append(u) or info)
+    monkeypatch.setattr(web, "scrape", lambda u, max_chars=0: {"title": "T", "description": "D", "image": None})
+    net[("example.com", "/watch")] = (200, {"content-type": "text/html", "content-length": "10"})
+    r = I.inspect_link("https://example.com/watch")
+    assert r["video"] == info and seen == ["https://example.com/watch"]
+    assert not any("yt-dlp" in x for x in r["safety"]["skipped"])
+
+
+def test_video_info_only_for_html_pages(net, monkeypatch):
+    monkeypatch.setattr(mdm, "video_info", lambda u: (_ for _ in ()).throw(AssertionError("must not be called")))
+    net[("example.com", "/a.mp4")] = file()
+    r = I.inspect_link("https://example.com/a.mp4")
+    assert "video" not in r
+
+
+def test_ytdlp_missing_is_noted_not_fatal(net, monkeypatch):
+    def boom(u):
+        raise mdm.MdmError("yt-dlp is not installed (install-ytdlp)")
+    monkeypatch.setattr(mdm, "video_info", boom)
+    net[("example.com", "/p")] = (200, {"content-type": "text/html", "content-length": "10"})
+    r = I.inspect_link("https://example.com/p")
+    assert "video" not in r and "yt-dlp is not installed: run misterdownloadmanager-cli install-ytdlp" in r["safety"]["skipped"]
+    assert r["safety"]["level"] == "ok"  # a missing optional tool never changes the verdict
+
+
+def test_other_video_info_failures_are_silent(net, monkeypatch):
+    monkeypatch.setattr(mdm, "video_info", lambda u: (_ for _ in ()).throw(mdm.MdmError("Unsupported URL")))
+    net[("example.com", "/p")] = (200, {"content-type": "text/html", "content-length": "10"})
+    r = I.inspect_link("https://example.com/p")
+    assert "video" not in r and not any("yt-dlp" in x for x in r["safety"]["skipped"])
 
 
 def vt(monkeypatch, status, body):

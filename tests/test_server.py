@@ -1,5 +1,7 @@
 import json
 import queue
+import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,7 +18,11 @@ REPORT = {"url": "https://x.org/a.zip", "safety": {"level": "ok", "reasons": [],
 
 
 class StubJobs:
-    def __init__(self):
+    def __init__(self, root=None):
+        self.library_dir = Path(root) if root else None
+        self.items = {}
+        self.chats = {}
+        self.chat_events = []  # (chat_id, event) in call order
         self.starts = 0
         self.calls = []
         self.props = {
@@ -69,6 +75,75 @@ class StubJobs:
 
     def unsubscribe(self, q):
         self.unsubscribed = True
+
+    # ---- library (contracts/library.md "Python interface") ----
+    def add_item(self, iid, files):
+        """files: {relative path: bytes}; written under files/<job id>/ so streaming is real."""
+        jid = "j_" + iid
+        base = self.library_dir / "files" / jid
+        out = []
+        for i, (rel, data) in enumerate(files.items()):
+            if ".." not in rel:
+                (base / rel).parent.mkdir(parents=True, exist_ok=True)
+                (base / rel).write_bytes(data)
+            out.append({"index": i, "path": rel, "size": len(data), "mime": "video/mp4", "playable": True})
+        self.items[iid] = {"id": iid, "job_id": jid, "title": iid, "kind": "video", "files": out,
+                           "main": max(range(len(out)), key=lambda i: out[i]["size"]), "poster": False}
+        return self.items[iid]
+
+    def list_items(self):
+        return list(self.items.values())[::-1]
+
+    def get_item(self, iid):
+        if iid not in self.items:
+            raise NotFound(iid)
+        return self.items[iid]
+
+    def item_file(self, iid, index=None):
+        it = self.get_item(iid)
+        index = it["main"] if index is None else index
+        if not 0 <= index < len(it["files"]):
+            raise NotFound(f"{iid} file {index}")
+        base = (self.library_dir / "files" / it["job_id"]).resolve()
+        p = (base / it["files"][index]["path"]).resolve()
+        if not p.is_relative_to(base) or not p.is_file():
+            raise NotFound(f"{iid} file {index}")
+        return p
+
+    def poster_path(self, iid):
+        self.get_item(iid)
+        p = self.library_dir / "posters" / f"{iid}.jpg"
+        return p if p.is_file() else None
+
+    def delete_item(self, iid):
+        self.get_item(iid)
+        del self.items[iid]
+
+    # ---- chats ----
+    def create_chat(self, title=None):
+        cid = f"c_{len(self.chats) + 1:08d}"
+        self.chats[cid] = {"id": cid, "title": title or "New download", "created": "t", "updated": "t"}
+        return self.chats[cid]
+
+    def list_chats(self):
+        return list(self.chats.values())[::-1]
+
+    def get_chat(self, cid):
+        if cid not in self.chats:
+            raise NotFound(cid)
+        return {"chat": self.chats[cid], "events": [e for c, e in self.chat_events if c == cid]}
+
+    def delete_chat(self, cid):
+        if self.chats.pop(cid, None) is None:
+            raise NotFound(cid)
+        self.chat_events = [(c, e) for c, e in self.chat_events if c != cid]
+
+    def append_chat_event(self, cid, event):
+        if cid not in self.chats:
+            self.chats[cid] = {"id": cid, "title": "New download", "created": "t", "updated": "t"}
+        if event["type"] == "user" and self.chats[cid]["title"] == "New download":
+            self.chats[cid]["title"] = event["text"][:60]
+        self.chat_events.append((cid, event))
 
 
 class StubAgent:
@@ -258,3 +333,211 @@ def test_index_needs_no_external_resources(env):
     html = env[0].get("/").text
     assert not re.search(r'<(script|link)[^>]+(src|href)=["\']?(https?:)?//', html)
     assert not re.search(r"innerHTML|outerHTML|insertAdjacentHTML|document\.write", html)
+
+
+# ---- chats ----
+
+class ProposingAgent(StubAgent):
+    def run(self, history, user_text):
+        yield {"type": "tool_step", "name": "inspect_link", "args": {}}
+        yield {"type": "proposal", "proposal": {"id": "p_00000009", "status": "pending"}}
+        yield {"type": "text", "text": "here"}
+        yield {"type": "done"}
+
+
+def test_chat_events_persisted_in_order():
+    jobs = StubJobs()
+    c = TestClient(server.create_app(jobs=jobs, agent=ProposingAgent()), base_url="http://localhost")
+    c.post("/api/chat", json={"session": "c_1", "message": "find x"})
+    assert jobs.chat_events == [
+        ("c_1", {"type": "user", "text": "find x"}),
+        ("c_1", {"type": "tool_step", "name": "inspect_link", "args": {}}),
+        ("c_1", {"type": "proposal", "id": "p_00000009"}),
+        ("c_1", {"type": "text", "text": "here"}),
+    ]
+    assert c.get("/api/chats/c_1").json()["chat"]["title"] == "find x"
+
+
+def test_chat_error_persisted():
+    class Boom(StubAgent):
+        def run(self, history, user_text):
+            raise RuntimeError("nope")
+            yield
+
+    jobs = StubJobs()
+    c = TestClient(server.create_app(jobs=jobs, agent=Boom()), base_url="http://localhost")
+    c.post("/api/chat", json={"session": "c_1", "message": "m"})
+    assert [e["type"] for _, e in jobs.chat_events] == ["user", "error"]
+
+
+def test_chat_storage_failure_does_not_break_stream():
+    class Broken(StubJobs):
+        def append_chat_event(self, cid, event):
+            raise OSError("disk full")
+
+    c = TestClient(server.create_app(jobs=Broken(), agent=StubAgent()), base_url="http://localhost")
+    assert [e["type"] for e in events(c.post("/api/chat", json={"session": "s", "message": "m"}))] == ["tool_step", "text", "done"]
+
+
+def test_chats_crud(env):
+    c, jobs, agent = env
+    chat = c.post("/api/chats").json()
+    assert chat["title"] == "New download" and chat["id"].startswith("c_")
+    assert [x["id"] for x in c.get("/api/chats").json()] == [chat["id"]]
+    c.post("/api/chat", json={"session": chat["id"], "message": "one"})
+    got = c.get(f"/api/chats/{chat['id']}").json()
+    assert [e["type"] for e in got["events"]] == ["user", "tool_step", "text"]
+    assert c.delete(f"/api/chats/{chat['id']}").status_code == 204
+    assert c.get(f"/api/chats/{chat['id']}").status_code == 404
+    assert c.delete(f"/api/chats/{chat['id']}").status_code == 404
+    c.post("/api/chat", json={"session": chat["id"], "message": "two"})
+    assert agent.histories[-1] == []  # deleting the chat dropped its model history
+
+
+def test_cross_origin_delete_rejected(env):
+    c, jobs, _ = env
+    cid = c.post("/api/chats").json()["id"]
+    assert c.delete(f"/api/chats/{cid}", headers={"Origin": "http://evil.example"}).status_code == 403
+    assert cid in jobs.chats
+
+
+# ---- library ----
+
+DATA = bytes(range(256)) * 4  # 1024 bytes
+
+
+@pytest.fixture
+def lib(tmp_path, monkeypatch):
+    monkeypatch.delenv("MDM_SECRET", raising=False)
+    jobs = StubJobs(tmp_path)
+    jobs.add_item("i_1", {"Night of the Living Dead.mp4": DATA, "sub/s.srt": b"1\n"})
+    jobs.add_item("i_bad", {"../../outside.txt": b"x"})
+    (tmp_path / "outside.txt").write_bytes(b"secret")
+    c = TestClient(server.create_app(jobs=jobs, agent=StubAgent()), base_url="http://127.0.0.1:8000")
+    return c, jobs
+
+
+def test_library_list_and_get(lib):
+    c, _ = lib
+    assert [i["id"] for i in c.get("/api/library").json()] == ["i_bad", "i_1"]
+    assert c.get("/api/library/i_1").json()["main"] == 0
+    assert c.get("/api/library/nope").status_code == 404
+
+
+def test_stream_whole_and_inline(lib):
+    c, _ = lib
+    r = c.get("/api/library/i_1/stream")
+    assert r.status_code == 200 and r.content == DATA
+    assert r.headers["accept-ranges"] == "bytes"
+    assert r.headers["content-disposition"] == "inline; filename*=UTF-8''Night%20of%20the%20Living%20Dead.mp4"
+    assert r.headers["content-type"] == "video/mp4"
+    assert c.get("/api/library/i_1/stream?file=1").content == b"1\n"
+
+
+@pytest.mark.parametrize("rng,start,end", [("bytes=0-99", 0, 99), ("bytes=1000-", 1000, 1023), ("bytes=-24", 1000, 1023)])
+def test_stream_range(lib, rng, start, end):
+    r = lib[0].get("/api/library/i_1/stream", headers={"Range": rng})
+    assert r.status_code == 206
+    assert r.headers["content-range"] == f"bytes {start}-{end}/1024"
+    assert r.content == DATA[start:end + 1] and len(r.content) == end - start + 1
+
+
+def test_stream_bad_range_416(lib):
+    r = lib[0].get("/api/library/i_1/stream", headers={"Range": "bytes=5000-6000"})
+    assert r.status_code == 416 and r.headers["content-range"] == "bytes */1024"
+
+
+def test_download_is_attachment_and_resumable(lib):
+    c, _ = lib
+    r = c.get("/api/library/i_1/download")
+    assert r.status_code == 200 and r.content == DATA
+    assert r.headers["content-disposition"].startswith("attachment; filename*=UTF-8''Night%20of")
+    r = c.get("/api/library/i_1/download", headers={"Range": "bytes=512-"})
+    assert r.status_code == 206 and r.content == DATA[512:]
+
+
+def test_unicode_filename_rfc5987(lib):
+    c, jobs = lib
+    jobs.add_item("i_u", {"Amélie 100%.mp4": b"abc"})
+    assert c.get("/api/library/i_u/download").headers["content-disposition"] == \
+        "attachment; filename*=UTF-8''Am%C3%A9lie%20100%25.mp4"
+
+
+def test_traversal_and_bad_file_param(lib):
+    c, _ = lib
+    assert c.get("/api/library/i_bad/stream").status_code == 404
+    assert c.get("/api/library/i_bad/download").status_code == 404
+    assert c.get("/api/library/i_1/stream?file=9").status_code == 404
+    for q in ("file=-1", "file=abc", "file=0.5", "file=../../outside.txt"):
+        assert c.get(f"/api/library/i_1/stream?{q}").status_code in (400, 422), q
+        assert c.get(f"/api/library/i_1/download?{q}").status_code in (400, 422), q
+    assert c.get("/api/library/i_1/stream?path=../../outside.txt").content == DATA  # extra params ignored
+
+
+def test_poster(lib, tmp_path):
+    c, _ = lib
+    assert c.get("/api/library/i_1/poster").status_code == 404
+    assert c.get("/api/library/nope/poster").status_code == 404
+    (tmp_path / "posters").mkdir()
+    (tmp_path / "posters" / "i_1.jpg").write_bytes(b"\xff\xd8jpeg")
+    r = c.get("/api/library/i_1/poster")
+    assert r.status_code == 200 and r.content == b"\xff\xd8jpeg"
+    assert r.headers["content-type"] == "image/jpeg"
+    assert r.headers["cache-control"] == "private, max-age=86400"
+
+
+def test_delete_item(lib):
+    c, jobs = lib
+    assert c.delete("/api/library/i_1").status_code == 204
+    assert "i_1" not in jobs.items
+    assert c.delete("/api/library/i_1").status_code == 404
+
+
+def test_signed_link_roundtrip(lib, tmp_path):
+    c, _ = lib
+    r = c.post("/api/library/i_1/link")
+    body = r.json()
+    assert r.status_code == 200 and body["url"].startswith("/api/library/i_1/stream?file=0&exp=")
+    assert abs(body["expires"] - (time.time() + 6 * 3600)) < 5
+    assert c.get(body["url"]).content == DATA
+    secret = tmp_path / ".secret"
+    assert secret.stat().st_mode & 0o777 == 0o600 and len(secret.read_bytes()) == 32
+    assert c.post("/api/library/i_1/link?file=1").json()["url"].startswith("/api/library/i_1/stream?file=1&")
+    assert c.post("/api/library/i_1/link?file=7").status_code == 404
+    assert c.post("/api/library/nope/link").status_code == 404
+
+
+def test_signed_link_tampered_or_expired_403(lib):
+    import hashlib, hmac
+    c, _ = lib
+    url = c.post("/api/library/i_1/link").json()["url"]
+    assert c.get(url.replace("file=0", "file=1")).status_code == 403
+    assert c.get(url.replace("/i_1/", "/i_bad/")).status_code == 403
+    assert c.get(url[:-1] + ("0" if url[-1] != "0" else "1")).status_code == 403
+    assert c.get(url.replace("&exp=", "&exp=1")).status_code == 403
+    assert c.get("/api/library/i_1/stream?sig=abc").status_code == 403
+    key = (lib[1].library_dir / ".secret").read_bytes()
+    exp = int(time.time()) - 1
+    sig = hmac.new(key, f"i_1:0:{exp}".encode(), hashlib.sha256).hexdigest()
+    assert c.get(f"/api/library/i_1/stream?file=0&exp={exp}&sig={sig}").status_code == 403
+
+
+def test_secret_from_env_and_kept(lib, monkeypatch, tmp_path):
+    monkeypatch.setenv("MDM_SECRET", "s3cret")
+    jobs = StubJobs(tmp_path / "other")
+    jobs.add_item("i_1", {"a.mp4": b"abc"})
+    c = TestClient(server.create_app(jobs=jobs, agent=StubAgent()), base_url="http://localhost")
+    assert c.get(c.post("/api/library/i_1/link").json()["url"]).content == b"abc"
+    assert not (tmp_path / "other" / ".secret").exists()
+
+
+def test_secret_file_reused(lib, tmp_path):
+    c, jobs = lib
+    url = c.post("/api/library/i_1/link").json()["url"]
+    c2 = TestClient(server.create_app(jobs=jobs, agent=StubAgent()), base_url="http://localhost")  # a restart
+    assert c2.get(url).status_code == 200
+
+
+def test_csp_allows_media_and_posters(env):
+    csp = env[0].get("/").headers["content-security-policy"]
+    assert "media-src 'self'" in csp and "img-src 'self'" in csp

@@ -21,7 +21,27 @@ with reasons. Nothing downloads until you press **Download**. When it finishes y
 The model has no tool that starts a download. It can only create a *proposal*; only the Download button's HTTP call
 (`POST /api/proposals/{id}/approve`) starts a job. Safety checks are heuristics, not a guarantee: a clean badge never means virus-free.
 
-## Setup (macOS)
+## Quick start (macOS)
+```sh
+./run.sh
+```
+Creates the venv, installs dependencies, builds MDM (or installs the prebuilt one), starts Firecrawl if Docker is running, and opens http://127.0.0.1:8000. On the first run it creates `.env` and stops: add `GROQ_API_KEY` (and optionally `VIRUSTOTAL_API_KEY`), then run `./run.sh` again. Re-running is safe.
+
+## Linux / server (Docker)
+```sh
+scripts/firecrawl_local.sh up && docker compose up -d --build
+```
+Needs a `.env` with `GROQ_API_KEY` (`cp .env.example .env`). The first build compiles MDM from the fork, which is slow (several minutes, a few GB of disk). The app joins Firecrawl's Docker network and stays bound to `127.0.0.1:8000` (it refuses other Host headers, so do not publish it on another address). Run `mkdir -p library` first: the library (catalogue, files, posters) lives in `./library` (or `$LIBRARY_DIR`), owned by uid 1000 in the container. `docker compose down` stops it. The image includes ffmpeg (posters, video merges) and yt-dlp (video pages).
+
+## Stream from your server (Tailscale)
+1. Install [Tailscale](https://tailscale.com/download) on the server and on your laptop, and sign both in to the same tailnet.
+2. In the server's `.env` set `MDM_TOKEN` (the login password; make it long and random: `openssl rand -hex 32`; failed logins are not rate limited) and `ALLOWED_HOSTS` (the server's MagicDNS name, e.g. `box.tailnet-1234.ts.net`). Optional: `MDM_SECRET` (signs cookies and stream links; otherwise one is generated into the library). The server refuses to start with `ALLOWED_HOSTS` and no `MDM_TOKEN`.
+3. Start the app (`./run.sh` or `docker compose up -d`), then on the server: `tailscale serve --bg 8000`.
+4. On the laptop open `https://box.tailnet-1234.ts.net` and log in with the token. Library items stream in the browser; for mkv/avi use the item's "Open in VLC" link (a signed link valid 6 hours, no login needed).
+
+The app never listens on `0.0.0.0`: it stays on `127.0.0.1:8000` and `tailscale serve` publishes it on the tailnet over HTTPS. Storage defaults to `~/MDM Library` (`LIBRARY_DIR` to change it).
+
+### Manual setup (macOS)
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env            # then add GROQ_API_KEY (and optionally VIRUSTOTAL_API_KEY)

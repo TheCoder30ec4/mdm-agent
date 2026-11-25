@@ -59,10 +59,11 @@ class _Bound:
 
 class FakeJobs:
     def __init__(self):
-        self.proposed, self.started = [], []
+        self.proposed, self.started, self.opts = [], [], []
 
-    def propose(self, report, files=None, note=""):
+    def propose(self, report, files=None, note="", **opts):
         self.proposed.append((report, files, note))
+        self.opts.append(opts)
         return {"id": f"p_{len(self.proposed):08d}", "status": "pending", "report": report, "files": files or [], "note": note}
 
     def list_jobs(self):
@@ -302,3 +303,30 @@ def test_pasted_link_with_server_error_is_not_started():
     evs, _ = run(a, "https://www.gutenberg.org/cache/epub/84/pg84.txt")
     assert a.jobs.started == [] and a.jobs.proposed == []
     assert "HTTP 503" in next(e for e in evs if e["type"] == "text")["text"]
+
+
+def test_propose_download_passes_optional_fields_only_when_set():
+    a, m = make([tc("propose_download", {"url": "https://archive.org/a.iso", "note": "n"}, 1),
+                 tc("propose_download", {"url": "https://archive.org/b.iso", "checksum": "sha256:" + "ab" * 32, "mode": "video",
+                                         "height": 720, "subs": "en"}, 2),
+                 tc("propose_download", {"url": "https://archive.org/c.iso", "checksum": "", "subs": "", "mode": None}, 3),
+                 AIMessage(content="done")])
+    evs, _ = run(a)
+    assert a.jobs.opts == [{}, {"checksum": "sha256:" + "ab" * 32, "mode": "video", "height": 720, "subs": "en"}, {}]
+    assert types(evs).count("proposal") == 3
+
+
+def test_propose_download_bad_option_is_a_tool_error():
+    a, m = make([tc("propose_download", {"url": "https://archive.org/a.iso", "height": "tall"}, 1), AIMessage(content="x")])
+    evs, _ = run(a)
+    assert a.jobs.proposed == [] and "error" in str(tool_results(m))
+
+
+def test_pasted_video_page_downloads_in_video_mode():
+    a, m = make([])
+    a._inspect.inspect_link = lambda url: dict(REPORT, url=url, filename=None, video={"title": "Cat", "heights": [720], "subtitles": []})
+    evs, _ = run(a, "https://video.example/watch?v=1")
+    assert a.jobs.opts == [{"mode": "video"}] and a.jobs.started == ["p_00000001"]
+    a2, _ = make([])
+    evs, _ = run(a2, "https://archive.org/download/x/film.mp4")  # a plain file: no mode
+    assert a2.jobs.opts == [{}]

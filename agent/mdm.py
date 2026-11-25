@@ -1,6 +1,7 @@
 """Wrapper around misterdownloadmanager-cli (--json mode). Args are lists, never a shell."""
 import json
 import os
+import re
 import subprocess
 import threading
 from pathlib import Path
@@ -83,23 +84,66 @@ def _connections() -> int:
     return min(max(n, 1), 128)
 
 
+def _dns() -> list[str]:
+    """MDM_DNS (optional): passed as `--dns` to `get` (the CLI's `video-get` and `resume` have no such flag)."""
+    v = (os.environ.get("MDM_DNS") or "").strip()
+    return ["--dns", v] if v else []
+
+
+CHECKSUM = re.compile(r"^(?:(?:md5|sha-?1|sha-?256|sha-?512|crc32):)?[0-9a-fA-F]{8,128}$", re.I)
+SUBS = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*(,[A-Za-z0-9][A-Za-z0-9_-]*)*$")  # "en,fr", "all", "none"
+
+
+def check_options(checksum=None, mode=None, height=None, subs=None) -> None:
+    """Validate the optional proposal fields; MdmError names the bad one. Values only ever reach argv lists."""
+    if checksum is not None and not (isinstance(checksum, str) and CHECKSUM.match(checksum)):
+        raise MdmError("checksum must be hex (MD5, SHA-1, SHA-256, SHA-512 or CRC32), optionally 'sha256:<hex>'")
+    if mode not in (None, "video"):
+        raise MdmError("mode must be 'video' or omitted")
+    if height is not None and not (type(height) is int and 1 <= height <= 8000):
+        raise MdmError("height must be an integer such as 720 or 1080")
+    if subs is not None and not (isinstance(subs, str) and len(subs) <= 100 and SUBS.match(subs)):
+        raise MdmError("subs must be language codes such as 'en,fr', 'all' or 'none'")
+
+
 def _err_text(obj: dict) -> str:
     return str(obj.get("error") or obj.get("message") or "download failed")
 
 
 def run(source: str, dest_dir: str, files: list[int] | None = None, on_event=None, cancel=None,
-        download_dir: str | None = None) -> dict:
+        download_dir: str | None = None, *, checksum: str | None = None, mode: str | None = None,
+        height: int | None = None, subs: str | None = None, resume: str | None = None) -> dict:
+    """checksum: `get --checksum`. mode "video": `video-get` (height -> --quality, subs -> --subs).
+    resume: a <file>.mdm.json state file inside dest_dir: `resume` continues it (the URL is in the file)."""
     source = _check_source(source)
     dest = _confine(dest_dir, download_dir)
     if files is not None and not all(type(i) is int and i >= 0 for i in files):
         raise MdmError("files must be non-negative integers")
+    check_options(checksum, mode, height, subs)
     dest.mkdir(parents=True, exist_ok=True)
-    if _is_torrent(source):
+    if resume is not None:
+        state = Path(resume).resolve()
+        if not state.name.endswith(".mdm.json") or dest not in state.parents or not state.is_file():
+            raise MdmError("resume needs a .mdm.json state file inside the download folder")
+        # ponytail: a resumed download is not re-verified against `checksum` (the CLI's resume has no such flag)
+        args = [_cli(), "--json", "resume", str(state), "-c", str(_connections())]
+    elif mode == "video":
+        if _is_torrent(source):
+            raise MdmError("video mode needs a web page address, not a magnet link")
+        args = [_cli(), "--json", "video-get", source, "-o", str(dest), "-c", str(_connections())]
+        if height:
+            args += ["--quality", str(height)]
+        if subs:
+            args += ["--subs", subs]
+    elif _is_torrent(source):
         args = [_cli(), "--json", "torrent-get", source, "-o", str(dest)]
         if files:
             args += ["--files", ",".join(str(i) for i in files)]
     else:
         args = [_cli(), "--json", "get", source, "-o", str(dest), "-c", str(_connections())]
+        if checksum:
+            args += ["--checksum", checksum]
+        args += _dns()
     try:
         proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 stdin=subprocess.DEVNULL)
@@ -192,3 +236,37 @@ def torrent_info(source: str) -> dict:
         raise MdmError((r.stderr.strip().splitlines() or ["torrent-info failed"])[-1][:300])
     return {"name": info.get("name"), "info_hash": info.get("info_hash"), "size": info.get("size"),
             "files": info.get("files") or []}
+
+
+def video_info(url: str) -> dict | None:
+    """What `video-info` knows about a page: {"title", "heights": [1080, 720...], "subtitles": [{"code","name",
+    "automatic"}]}; None when the page holds no single video (a list, or no video at all).
+    Raises MdmError("yt-dlp is not installed ...") when the tool is missing, MdmError for anything else.
+    ponytail: the CLI reports no duration or thumbnail, so neither is here."""
+    url = _check_source(url)
+    try:
+        r = subprocess.run([_cli(), "--json", "video-info", url], capture_output=True, text=True,
+                           timeout=45, stdin=subprocess.DEVNULL)
+    except OSError as e:
+        raise MdmError(f"cannot start downloader: {e.strerror or e}") from None
+    except subprocess.TimeoutExpired:
+        raise MdmError("video-info timed out") from None
+    info = None
+    for line in r.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            if "error" in o and "choices" not in o:
+                raise MdmError(_err_text(o))
+            if "choices" in o:
+                info = o
+    if info is None:
+        if r.returncode != 0:
+            raise MdmError((r.stderr.strip().splitlines() or ["video-info failed"])[-1][:300])
+        return None
+    heights = sorted({c["height"] for c in info.get("choices") or [] if isinstance(c.get("height"), int)}, reverse=True)
+    return {"title": info.get("title"), "heights": heights,
+            "subtitles": [{k: s.get(k) for k in ("code", "name", "automatic")} for s in info.get("subtitles") or []]}

@@ -1,0 +1,26 @@
+# MDM Agent. Start Firecrawl first: scripts/firecrawl_local.sh up, then: docker compose up -d --build
+# Published on 127.0.0.1 only: server.py rejects any Host header other than localhost / 127.0.0.1.
+services:
+  agent:
+    build: .
+    env_file: .env  # also passes MDM_TOKEN, ALLOWED_HOSTS and MDM_SECRET when set there
+    environment:
+      FIRECRAWL_API_URL: http://api:3002
+      MDM_CLI: /usr/local/bin/misterdownloadmanager-cli
+      LIBRARY_DIR: /library
+      # a .env from the macOS setup may set these to host paths; pin them to the library's layout
+      DOWNLOAD_DIR: /library/files
+      DATA_DIR: /library
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ${LIBRARY_DIR:-./library}:/library  # create it first (mkdir -p library); the app user is uid 1000
+    restart: unless-stopped
+    networks:
+      - default
+      - firecrawl  # Firecrawl's `api` service answers by that name on its backend network
+
+networks:
+  firecrawl:
+    external: true
+    name: firecrawl_backend  # <compose project "firecrawl" (name: in its compose file)>_<network key "backend">

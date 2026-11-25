@@ -3,104 +3,80 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="Find a file, read its safety verdict, approve the download, then play or save it from your library.">
 <title>Download Assistant</title>
-<style>
-:root {
-  --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5b6573; --border: #d6dae0;
-  --accent: #2455d6; --accent-text: #ffffff; --user-bg: #2455d6; --user-text: #ffffff;
-  --ok-bg: #dff3e4; --ok-text: #0d5324; --caution-bg: #fdf0c9; --caution-text: #6b4a00;
-  --risky-bg: #fbdcdc; --risky-text: #8c1212; --err: #b3261e; --focus: #1a73e8; --shadow: 0 1px 3px rgba(0,0,0,.12);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #101317; --panel: #1a1f26; --text: #e8ebef; --muted: #9aa5b3; --border: #343b45;
-    --accent: #6c93ff; --accent-text: #0b1020; --user-bg: #2f4fae; --user-text: #ffffff;
-    --ok-bg: #123a20; --ok-text: #aee9c0; --caution-bg: #46350a; --caution-text: #ffe08a;
-    --risky-bg: #4a1616; --risky-text: #ffb4b4; --err: #ff8a80; --focus: #8ab4f8; --shadow: none;
-  }
-}
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; height: 100dvh; }
-:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-header { padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel); }
-header h1 { margin: 0; font-size: 1.05rem; }
-header p { margin: 0; font-size: .8rem; color: var(--muted); }
-#banner { margin: 0; padding: 8px 16px; background: var(--caution-bg); color: var(--caution-text); font-size: .9rem; }
-#banner[hidden] { display: none; }
-#thread { flex: 1; overflow-y: auto; padding: 16px; }
-#inner { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
-.msg { max-width: 88%; padding: 9px 13px; border-radius: 16px; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: var(--shadow); }
-.msg.user { align-self: flex-end; background: var(--user-bg); color: var(--user-text); border-bottom-right-radius: 4px; }
-.msg.bot { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
-.msg.err { align-self: flex-start; background: var(--panel); border: 1px solid var(--err); color: var(--err); }
-.chip { align-self: flex-start; font-size: .82rem; color: var(--muted); border: 1px dashed var(--border); border-radius: 999px; padding: 2px 11px; overflow-wrap: anywhere; max-width: 88%; }
-.typing { align-self: flex-start; color: var(--muted); font-size: .85rem; }
-.divider { align-self: stretch; text-align: center; color: var(--muted); font-size: .8rem; margin: 4px 0; }
-.empty { text-align: center; color: var(--muted); padding: 28px 8px; }
-.empty h2 { color: var(--text); margin: 0 0 6px; font-size: 1.15rem; }
-.examples { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
-button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); padding: 8px 14px; min-height: 40px; }
-button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
-button.danger { background: var(--risky-bg); color: var(--risky-text); border-color: var(--risky-text); font-weight: 600; }
-button:disabled { opacity: .55; cursor: not-allowed; }
-.card { align-self: stretch; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
-.card .body { display: flex; gap: 12px; padding: 12px; }
-.card img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; flex: none; background: var(--bg); }
-.card .info { min-width: 0; flex: 1; }
-.card h3 { margin: 0 0 2px; font-size: 1rem; overflow-wrap: anywhere; }
-.meta { color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
-.badge { display: inline-block; font-weight: 700; font-size: .82rem; padding: 2px 10px; border-radius: 999px; margin: 6px 0 2px; }
-.badge.ok { background: var(--ok-bg); color: var(--ok-text); }
-.badge.caution { background: var(--caution-bg); color: var(--caution-text); }
-.badge.risky { background: var(--risky-bg); color: var(--risky-text); }
-.card ul { margin: 4px 0; padding-left: 20px; font-size: .88rem; }
-.card details { font-size: .88rem; margin-top: 6px; }
-.card details ul { max-height: 140px; overflow-y: auto; }
-.note { font-size: .88rem; margin: 6px 0 0; }
-.fine { font-size: .78rem; color: var(--muted); margin: 6px 0 0; }
-.foot { border-top: 1px solid var(--border); padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.foot .grow { flex: 1 1 100%; }
-.foot progress { width: 100%; height: 12px; }
-.confirm { flex: 1 1 100%; background: var(--risky-bg); color: var(--risky-text); border-radius: 8px; padding: 10px; }
-.confirm p { margin: 0 0 8px; font-weight: 600; }
-.confirm .row { display: flex; gap: 8px; flex-wrap: wrap; }
-.errtext { color: var(--err); font-size: .88rem; flex: 1 1 100%; }
-.path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .82rem; overflow-wrap: anywhere; }
-form { border-top: 1px solid var(--border); background: var(--panel); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
-form .row { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
-textarea { flex: 1; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 9px 12px; resize: none; max-height: 160px; min-height: 42px; }
-textarea:disabled { opacity: .6; }
-#toasts { position: fixed; right: 12px; left: 12px; bottom: 84px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
-.toast { pointer-events: auto; max-width: 420px; background: var(--text); color: var(--bg); border-radius: 10px; padding: 10px 12px; box-shadow: 0 4px 14px rgba(0,0,0,.3); display: flex; gap: 10px; align-items: flex-start; }
-.toast button { min-height: 28px; padding: 0 8px; background: transparent; color: inherit; border-color: currentColor; }
-.sr { position: absolute; left: -9999px; }
-@media (max-width: 520px) {
-  .card .body { flex-direction: column; }
-  .card img { width: 100%; height: 150px; }
-  .msg { max-width: 94%; }
-}
-@media (prefers-reduced-motion: no-preference) { .typing { animation: pulse 1.4s ease-in-out infinite; } }
-@keyframes pulse { 50% { opacity: .4; } }
-</style>
+<link rel="preload" href="/static/fonts/host-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/app.css">
+<script>document.documentElement.classList.add("js");</script>
 </head>
 <body>
-<header>
-  <h1>Download Assistant</h1>
-  <p>Describe something or paste a link. You decide what gets downloaded.</p>
+<header class="bar">
+  <div class="bar__in">
+    <button type="button" class="btn" id="menu" aria-expanded="false" aria-controls="side">Menu</button>
+    <h1>Download Assistant</h1>
+    <div class="bar__end"><button type="button" class="btn" id="signout" hidden>Sign out</button></div>
+  </div>
 </header>
 <p id="banner" role="status" hidden></p>
-<main id="thread" tabindex="-1" aria-label="Conversation">
-  <div id="inner" role="log" aria-live="polite" aria-relevant="additions"></div>
-</main>
-<form id="composer" autocomplete="off">
-  <div class="row">
-    <label for="input" class="sr">Message</label>
-    <textarea id="input" rows="1" maxlength="4000" placeholder="Describe what you want, or paste a link" required></textarea>
-    <button type="submit" class="primary" id="send">Send</button>
+
+<div class="shell" id="shell">
+  <nav class="side" id="side" aria-label="Library and chats">
+    <button type="button" class="btn" id="new-chat">New download</button>
+    <a class="side-link" id="nav-library" href="#library">Library <span class="count measured" id="dl-count" aria-label="downloads running"></span></a>
+    <h2 id="chats-h">Chats</h2>
+    <ul class="chats" id="chat-list" aria-labelledby="chats-h"></ul>
+  </nav>
+
+  <div class="view" id="view-chat">
+    <main id="thread" tabindex="-1" aria-label="Conversation">
+      <div class="chat-head" id="chat-head" hidden><h2 id="chat-title"></h2><div id="chat-tools"></div></div>
+      <div id="inner" role="log" aria-live="polite" aria-relevant="additions"></div>
+    </main>
+    <form id="composer" autocomplete="off">
+      <div class="row">
+        <label for="input" class="sr">Message</label>
+        <textarea id="input" rows="1" maxlength="4000" placeholder="Describe what you want, or paste a link" required aria-describedby="composer-hint"></textarea>
+        <button type="submit" class="btn primary" id="send">Send</button>
+      </div>
+      <p class="hint" id="composer-hint">Describe something or paste a link. You decide what gets downloaded.</p>
+    </form>
   </div>
-</form>
+
+  <section class="view" id="view-library" aria-labelledby="lib-h" hidden>
+    <div class="dl">
+      <h2 id="lib-h">Library</h2>
+      <section class="lib-active" id="lib-active" aria-labelledby="active-h" hidden>
+        <h3 id="active-h">Downloading now</h3>
+        <div id="dl-region" aria-live="polite"></div>
+      </section>
+      <div id="lib-region" aria-live="polite"></div>
+    </div>
+  </section>
+</div>
+
+<section class="login" id="login" hidden>
+  <form id="login-form" novalidate>
+    <h2>Sign in</h2>
+    <p>This server asks for its access token: the MDM_TOKEN value in the server’s .env.</p>
+    <label for="token">Access token</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" required aria-describedby="login-help">
+    <p class="help" id="login-help" aria-live="polite"></p>
+    <button type="submit" class="btn primary" id="login-btn">Sign in</button>
+  </form>
+</section>
+
+<dialog class="player" id="player" aria-labelledby="player-title">
+  <div class="player-head"><h2 id="player-title"></h2><button type="button" id="player-close">Close</button></div>
+  <video id="player-video" controls playsinline preload="metadata"></video>
+  <div class="player-foot">
+    <p class="meta" id="player-note"></p>
+    <a class="btn" id="player-dl" href="/api/library" download>Download to this computer</a>
+    <button type="button" id="player-link">Copy VLC link</button>
+    <div class="linkbox" id="linkbox" hidden><label for="link-url" class="sr">Stream link for VLC</label><input id="link-url" readonly></div>
+  </div>
+</dialog>
 <div id="toasts" role="status" aria-live="polite"></div>
 
 <script>
@@ -108,6 +84,7 @@ textarea:disabled { opacity: .6; }
 // All model/web-derived text goes through el()/textContent; there is no HTML string building anywhere.
 const $ = (id) => document.getElementById(id);
 const inner = $("inner"), thread = $("thread"), input = $("input"), sendBtn = $("send"), toasts = $("toasts");
+const enc = encodeURIComponent;
 
 function el(tag, attrs, ...kids) {
   const e = document.createElement(tag);
@@ -122,20 +99,12 @@ function el(tag, attrs, ...kids) {
   return e;
 }
 
-function sessionId() {
-  try {
-    let s = sessionStorage.getItem("dm-session");
-    if (!s) { s = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now()); sessionStorage.setItem("dm-session", s); }
-    return s;
-  } catch (e) { return window.__sid || (window.__sid = String(Math.random()).slice(2) + Date.now()); }
-}
-const SESSION = sessionId();
 
 function fmtBytes(n) {
   if (n == null || isNaN(n)) return "unknown size";
   const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
   while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-  return (i === 0 ? n : n.toFixed(n < 10 ? 2 : 1)) + " " + u[i];
+  return (i === 0 ? n : n.toFixed(n < 10 ? 2 : 1)) + " " + u[i];
 }
 const fmtSpeed = (s) => (s ? fmtBytes(s) + "/s" : "");
 
@@ -147,7 +116,7 @@ function add(node) {
   node.scrollIntoView({ block: "end" });
   return node;
 }
-function showTyping() { typing = el("div", { class: "typing", text: "Working..." }); inner.append(typing); typing.scrollIntoView({ block: "end" }); }
+function showTyping() { typing = el("div", { class: "typing", text: "Working…" }); inner.append(typing); typing.scrollIntoView({ block: "end" }); }
 function hideTyping() { if (typing) typing.remove(); typing = null; }
 
 const STEP_LABEL = {
@@ -155,19 +124,19 @@ const STEP_LABEL = {
   propose_download: "Preparing a preview", job_status: "Checking download status", list_jobs: "Listing downloads",
 };
 function stepText(ev) {
-  const base = (STEP_LABEL[ev.name] || String(ev.name)) + "...";
+  const base = (STEP_LABEL[ev.name] || String(ev.name)) + "…";
   const a = ev.args || {};
   const detail = a.query || a.url || a.job_id || "";
-  return detail ? base + " " + String(detail).slice(0, 120) : base;
+  return { base, detail: detail ? String(detail).slice(0, 120) : "" };
 }
 
 function showEmpty() {
   const send = (t) => { input.value = t; sendMessage(); };
   emptyEl = el("div", { class: "empty" },
     el("h2", { text: "What would you like to download?" }),
-    el("div", { text: "I search, check links for safety, and show you a preview. Nothing downloads until you press Download." }),
+    el("p", { text: "I search, check links for safety, and show you a preview. Nothing downloads until you press Download." }),
     el("div", { class: "examples" },
-      el("button", { type: "button", text: "Find a public-domain copy of Nosferatu (1922)", onclick: () => send("Find a public-domain copy of Nosferatu (1922)") }),
+      el("button", { type: "button", text: "Find Nosferatu (1922)", "aria-label": "Find a public-domain copy of Nosferatu (1922)", onclick: () => send("Find a public-domain copy of Nosferatu (1922)") }),
       el("button", { type: "button", text: "Paste a link to inspect", onclick: () => { input.value = "Please inspect this link: "; input.focus(); autosize(); } })));
   inner.append(emptyEl);
 }
@@ -177,12 +146,13 @@ const cards = new Map();      // proposal id -> {p, root, foot, footKey, refs}
 const jobs = new Map();       // job id -> job
 const toasted = new Set();
 
-const BADGE = { ok: ["Looks OK", "✓ "], caution: ["Caution", "! "], risky: ["Risky", "✕ "] };
+const BADGE = { ok: "Looks OK", caution: "Caution", risky: "Risky" };
 
 async function api(method, path, body) {
   const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
   let data = null;
   try { data = await r.json(); } catch (e) { /* non-JSON */ }
+  if (r.status === 401 && path !== "/api/login") showLogin();
   if (!r.ok) { const err = new Error((data && data.detail && typeof data.detail === "string" ? data.detail : "Request failed (" + r.status + ")")); err.status = r.status; throw err; }
   return data;
 }
@@ -190,27 +160,33 @@ async function api(method, path, body) {
 function buildCard(p) {
   const r = p.report || {}, s = r.safety || {}, level = BADGE[s.level] ? s.level : "caution";
   const title = r.title || r.filename || r.url || "Untitled";
-  const info = el("div", { class: "info" },
-    el("h3", { text: title }),
-    el("div", { class: "meta", text: [r.host, r.filename && r.filename !== title ? r.filename : null].filter(Boolean).join(" · ") }),
-    el("div", { class: "meta", text: [fmtBytes(r.size), r.content_type, r.kind === "magnet" ? "torrent" : null].filter(Boolean).join(" · ") }),
-    el("div", { class: "meta path", text: r.url || "" }),
-    el("span", { class: "badge " + level, text: BADGE[level][1] + BADGE[level][0]}));
-  if (s.reasons && s.reasons.length) info.append(el("ul", { "aria-label": "Safety reasons" }, s.reasons.map((x) => el("li", { text: String(x) }))));
+  // The verdict leads: it is what the person decides on.
+  const verdict = el("div", { class: "verdict " + level }, el("span", { class: "badge", text: BADGE[level] }));
+  if (s.reasons && s.reasons.length) verdict.append(el("ul", { "aria-label": "Safety reasons" }, s.reasons.map((x) => el("li", { text: String(x) }))));
+
+  const facts = el("dl", { class: "facts" });
+  const fact = (k, v) => { if (v) facts.append(el("div", {}, el("dt", { text: k }), el("dd", { class: "measured", text: String(v) }))); };
+  const chosen = p.files && p.files.length ? new Set(p.files) : null;
+  fact("Source", r.host);
+  fact("Size", fmtBytes(r.size));
+  fact("Type", r.kind === "magnet" ? "torrent" : r.content_type);
+  if (r.files && r.files.length) fact("Files", (chosen ? chosen.size + " of " : "") + r.files.length);
+  if (r.filename && r.filename !== title) fact("File name", r.filename);
+
+  const info = el("div", { class: "info" }, el("h3", { text: title }), facts, el("div", { class: "path", text: r.url || "" }));
   if (s.skipped && s.skipped.length) info.append(el("div", { class: "meta", text: "Checks that could not run:" }), el("ul", { "aria-label": "Skipped checks" }, s.skipped.map((x) => el("li", { text: String(x) }))));
   if (p.note) info.append(el("p", { class: "note", text: p.note }));
   if (r.files && r.files.length) {
-    const chosen = p.files && p.files.length ? new Set(p.files) : null;
     info.append(el("details", {}, el("summary", { text: "Files (" + (chosen ? chosen.size + " of " : "") + r.files.length + ")" }),
       el("ul", {}, r.files.map((f) => el("li", { text: (chosen ? (chosen.has(f.index) ? "✓ " : "– ") : "") + f.path + " (" + fmtBytes(f.size) + ")" })))));
   }
   info.append(el("p", { class: "fine", text: "Safety checks are heuristics, not a guarantee." }));
   const body = el("div", { class: "body" });
   if (typeof r.image === "string" && r.image.startsWith("https://")) {
-    body.append(el("img", { src: r.image, alt: "", loading: "lazy", referrerpolicy: "no-referrer", onerror: (e) => e.target.remove() }));
+    body.append(el("img", { src: r.image, alt: "", width: 112, height: 112, loading: "lazy", referrerpolicy: "no-referrer", onerror: (e) => e.target.remove() }));
   }
   body.append(info);
-  return body;
+  return [verdict, body];
 }
 
 function ensureCard(p, parent) {
@@ -226,6 +202,13 @@ function ensureCard(p, parent) {
 
 function jobFor(c) { return c.p.job_id ? jobs.get(c.p.job_id) : null; }
 
+async function cancelJob(job, btn, onErr) {
+  btn.disabled = true; btn.setAttribute("aria-busy", "true");
+  try { applyJob(await api("POST", "/api/jobs/" + encodeURIComponent(job.id) + "/cancel")); }
+  catch (e) { btn.disabled = false; onErr(e.message); }
+  finally { btn.removeAttribute("aria-busy"); }
+}
+
 function renderFoot(c) {
   const p = c.p, job = jobFor(c);
   const key = p.status + ":" + (job ? job.state : "-");
@@ -239,19 +222,17 @@ function renderFoot(c) {
   } else if (p.status === "rejected") {
     f.append(el("span", { class: "meta", text: "Skipped." }));
   } else if (!job) {
-    f.append(el("span", { class: "meta", text: "Starting download..." }));
+    f.append(el("span", { class: "meta", text: "Starting download…" }));
   } else if (job.state === "queued" || job.state === "running") {
     const bar = el("progress", { max: 100, "aria-label": "Download progress" });
-    const txt = el("span", { class: "meta grow" });
-    const cancel = el("button", { type: "button", text: "Cancel", onclick: async () => {
-      cancel.disabled = true;
-      try { applyJob(await api("POST", "/api/jobs/" + encodeURIComponent(job.id) + "/cancel")); } catch (e) { cancel.disabled = false; f.append(el("span", { class: "errtext", role: "alert", text: e.message })); }
-    } });
-    f.append(bar, txt, cancel);
-    c.refs = { bar, txt };
+    const txt = el("span", { class: "measured" });
+    const hint = el("span", { class: "slow" });
+    const cancel = el("button", { type: "button", text: "Cancel", onclick: () => cancelJob(job, cancel, (m) => f.append(el("span", { class: "errtext", role: "alert", text: m }))) });
+    f.append(bar, txt, cancel, hint);
+    c.refs = { bar, txt, hint };
     updateProgress(c, job);
   } else if (job.state === "done") {
-    f.append(el("span", { class: "meta grow", text: "Download complete." }), el("span", { class: "path grow", text: "Saved to " + (job.path || "?") }));
+    f.append(el("span", { class: "meta grow", text: "Download complete." }), pathEl("path grow", "Saved to " + (job.path || "?")));
   } else if (job.state === "error") {
     f.append(el("span", { class: "errtext", role: "alert", text: "Download failed: " + (job.error || "unknown error") }));
   } else {
@@ -259,10 +240,8 @@ function renderFoot(c) {
   }
 }
 
-function updateProgress(c, job) {
-  if (!c.refs) return;
-  const { bar, txt } = c.refs;
-  if (job.size) { bar.max = job.size; bar.value = job.downloaded || 0; } else { bar.removeAttribute("value"); }
+// The figures (bytes, speed, time left, connections or peers) and, when the numbers say so, why it is slow.
+function progressParts(job) {
   const left = fmtBytes(job.downloaded || 0) + (job.size ? " of " + fmtBytes(job.size) : "");
   const parts = [(job.state === "queued" ? "Queued. " : "") + left];
   if (job.speed) parts.push(fmtSpeed(job.speed));
@@ -272,25 +251,36 @@ function updateProgress(c, job) {
   const n = (k, one, many) => k + " " + (k === 1 ? one : many);
   if (torrent) parts.push(n(job.peers || 0, "peer", "peers") + " connected" + (job.peers_seen ? ", " + job.peers_seen + " found" : ""));
   else if (job.connections) parts.push(n(job.connections, "connection", "connections"));
-  txt.textContent = parts.join(" · ") + slowHint(job, torrent);
+  return { figures: parts.join(", "), hint: slowHint(job, torrent) };
+}
+function setBar(bar, job) {
+  if (job.size) { bar.max = job.size; bar.value = job.downloaded || 0; } else { bar.removeAttribute("value"); }
+}
+
+function updateProgress(c, job) {
+  if (!c.refs) return;
+  const { bar, txt, hint } = c.refs;
+  setBar(bar, job);
+  const p = progressParts(job);
+  txt.textContent = p.figures; hint.textContent = p.hint; hint.hidden = !p.hint;
 }
 
 // Time left from the current speed; hidden until both size and speed are known.
 function etaText(job) {
   if (job.state !== "running" || !job.size || !job.speed) return "";
   const s = Math.max(0, (job.size - (job.downloaded || 0)) / job.speed);
-  if (s < 60) return Math.ceil(s) + " s left";
-  if (s < 3600) return Math.round(s / 60) + " min left";
-  return Math.floor(s / 3600) + " h " + Math.round((s % 3600) / 60) + " min left";
+  if (s < 60) return Math.ceil(s) + " s left";
+  if (s < 3600) return Math.round(s / 60) + " min left";
+  return Math.floor(s / 3600) + " h " + Math.round((s % 3600) / 60) + " min left";
 }
 
 // Why it is slow, in plain words, when MDM's numbers say so.
 function slowHint(job, torrent) {
   if (job.state !== "running" || job.speed) return "";
-  if (torrent) return job.peers ? ". Connected to peers, waiting for data." :
-    ". Waiting for peers: few or no people are sharing this torrent right now, so it can't go faster.";
-  return job.downloaded ? ". Stalled: the server stopped sending data (it may be limiting or blocking this connection)."
-    : ". Connecting to the server...";
+  if (torrent) return job.peers ? "Connected to peers, waiting for data." :
+    "Waiting for peers: few or no people are sharing this torrent right now, so it can't go faster.";
+  return job.downloaded ? "Stalled: the server stopped sending data (it may be limiting or blocking this connection)."
+    : "Connecting to the server…";
 }
 
 function footError(c, msg) {
@@ -338,21 +328,313 @@ async function onSkip(c, dl, skip) {
   catch (e) { dl.disabled = skip.disabled = false; footError(c, e.message); }
 }
 
-// ---------- state sync ----------
-let earlier = null;
-function earlierBox() {
-  if (!earlier) { earlier = el("div", { class: "earlier", style: "display:contents" }); inner.prepend(earlier); }
-  return earlier;
+
+// ---------- library: finished downloads, with posters ----------
+const items = new Map();      // item id -> item
+const proposals = new Map();  // proposal id -> proposal
+const itemNodes = new Map();  // item id -> {li, key}
+let libState = "loading";
+const libRegion = $("lib-region");
+const KIND_WORD = { video: "Video", audio: "Audio", image: "Image", document: "Document", archive: "Archive", other: "File" };
+
+function mainFile(it) { return (it.files || [])[it.main || 0] || {}; }
+function extOf(path) { const m = /\.([A-Za-z0-9]{1,6})$/.exec(path || ""); return m ? m[1].toLowerCase() : ""; }
+
+function renderLibrary() {
+  updateCount(); renderActive();
+  if (libState === "loading") {
+    if (libRegion.dataset.state === "loading") return;
+    libRegion.dataset.state = "loading";
+    libRegion.replaceChildren(el("ul", { class: "lib-grid", "aria-busy": "true", "aria-label": "Loading the library" },
+      [0, 1, 2, 3].map(() => el("li", {}, el("div", { class: "skel-poster" })))));
+    return;
+  }
+  if (libState === "error" && !items.size) {
+    if (libRegion.dataset.state === "error") return;
+    libRegion.dataset.state = "error";
+    libRegion.replaceChildren(el("div", { class: "dl-empty" },
+      el("p", { class: "errtext", role: "alert", text: "Could not load the library. The server may still be starting." }),
+      el("button", { type: "button", class: "btn", text: "Try again", onclick: () => { libState = "loading"; renderLibrary(); start(); } })));
+    return;
+  }
+  if (!items.size) {
+    if (libRegion.dataset.state === "empty") return;
+    libRegion.dataset.state = "empty";
+    libRegion.replaceChildren(el("div", { class: "dl-empty" },
+      el("p", { text: "Nothing here yet. Finished downloads land in the library with a poster, ready to play here or save to this computer." }),
+      el("button", { type: "button", class: "btn", text: "New download", onclick: newChat })));
+    return;
+  }
+  let grid = libRegion.querySelector(".lib-grid:not([aria-busy])");
+  if (!grid) { libRegion.dataset.state = "full"; grid = el("ul", { class: "lib-grid", "aria-label": "Downloaded files" }); libRegion.replaceChildren(grid); itemNodes.clear(); }
+  const sorted = [...items.values()].sort((a, b) => String(b.created).localeCompare(String(a.created)));
+  for (const [id, n] of itemNodes) if (!items.has(id)) { n.li.remove(); itemNodes.delete(id); }
+  sorted.forEach((it, i) => {
+    const key = [it.title, it.poster, it.size, (it.files || []).length].join("|");
+    let n = itemNodes.get(it.id);
+    if (!n || n.key !== key) { const li = itemNode(it); if (n) n.li.replaceWith(li); n = { li, key }; itemNodes.set(it.id, n); }
+    if (grid.children[i] !== n.li) grid.insertBefore(n.li, grid.children[i] || null);
+  });
 }
 
-function applyProposal(p, fromRestore) {
-  let c = cards.get(p.id);
-  if (!c) {
-    if (emptyEl) { emptyEl.remove(); emptyEl = null; }
-    if (fromRestore) { const box = earlierBox(); c = ensureCard(p, box); }
-    else c = ensureCard(p); // new proposal (chat or another tab)
-  } else c.p = Object.assign({}, c.p, p);
-  renderFoot(c);
+function itemNode(it) {
+  const f = mainFile(it), ext = extOf(f.path), base = "/api/library/" + enc(it.id);
+  const face = it.poster
+    ? el("img", { src: base + "/poster", alt: "", loading: "lazy", width: 400, height: 600, onerror: (e) => e.target.remove() })
+    : el("span", { class: "kind" }, KIND_WORD[it.kind] || "File", ext ? el("small", { text: "." + ext }) : null);
+  const poster = el("button", { type: "button", class: "poster", "aria-label": (f.playable ? "Play " : "Open ") + it.title, onclick: () => openPlayer(it) }, face);
+  const actions = el("div", { class: "actions" },
+    f.playable ? el("button", { type: "button", text: "Play", onclick: () => openPlayer(it) }) : el("button", { type: "button", text: "Open", onclick: () => openPlayer(it) }),
+    el("a", { class: "btn", href: base + "/download?file=" + (it.main || 0), download: "", text: "Save" }));
+  const del = el("button", { type: "button", text: "Delete", onclick: () => confirmDelete(it, actions, del) });
+  actions.append(del);
+  const meta = [fmtBytes(it.size)]; if (ext) meta.push(ext); if ((it.files || []).length > 1) meta.push(it.files.length + " files");
+  return el("li", { class: "item" }, poster, el("h3", { text: it.title || f.path || "Untitled" }), el("p", { class: "meta measured", text: meta.join(", ") }), actions);
+}
+
+function confirmDelete(it, actions, del) {
+  if (actions.parentNode.querySelector(".confirm")) return;
+  del.disabled = true;
+  const no = el("button", { type: "button", text: "Keep" });
+  const yes = el("button", { type: "button", class: "danger", text: "Delete file" });
+  const box = el("div", { class: "confirm", role: "group", "aria-label": "Confirm delete" },
+    el("p", { text: "Delete " + (it.title || "this download") + " from this computer?" }), el("div", { class: "row" }, no, yes));
+  const close = () => { box.remove(); del.disabled = false; del.focus(); };
+  no.addEventListener("click", close);
+  box.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  yes.addEventListener("click", async () => {
+    yes.disabled = no.disabled = true;
+    try { await api("DELETE", "/api/library/" + enc(it.id)); items.delete(it.id); renderLibrary(); }
+    catch (e) { yes.disabled = no.disabled = false; box.append(el("span", { class: "errtext", role: "alert", text: e.message })); }
+  });
+  actions.after(box); no.focus();
+}
+
+function applyItem(it) { if (!it || !it.id) return; items.set(it.id, it); renderLibrary(); }
+
+// ---------- player ----------
+const player = $("player"), video = $("player-video");
+let playing = null;
+function openPlayer(it) {
+  const f = mainFile(it), idx = it.main || 0, base = "/api/library/" + enc(it.id);
+  playing = { it, idx };
+  $("player-title").textContent = it.title || f.path || "Untitled";
+  $("player-dl").href = base + "/download?file=" + idx;
+  $("linkbox").hidden = true; $("player-link").textContent = "Copy VLC link";
+  video.hidden = !f.playable;
+  if (f.playable) {
+    if (it.poster) video.poster = base + "/poster"; else video.removeAttribute("poster");
+    video.src = base + "/stream?file=" + idx;
+    $("player-note").textContent = "";
+  } else {
+    video.removeAttribute("src");
+    $("player-note").textContent = "Browsers can't play " + (extOf(f.path) ? "." + extOf(f.path) + " files" : "this file") + ". Copy the link into VLC (File, Open Network) or save it.";
+  }
+  player.showModal();
+  if (f.playable) video.play().catch(() => {});
+}
+function closePlayer() { video.pause(); video.removeAttribute("src"); video.load(); playing = null; }
+$("player-close").addEventListener("click", () => player.close());
+player.addEventListener("close", closePlayer);
+video.addEventListener("error", () => { if (playing) $("player-note").textContent = "This file did not play here (its codec may not be one browsers support). Copy the VLC link or save it."; });
+$("player-link").addEventListener("click", async () => {
+  if (!playing) return;
+  const btn = $("player-link"); btn.disabled = true;
+  try {
+    const d = await api("POST", "/api/library/" + enc(playing.it.id) + "/link?file=" + playing.idx);
+    const url = new URL(d.url, location.origin).href, box = $("link-url");
+    box.value = url; $("linkbox").hidden = false; box.select();
+    try { await navigator.clipboard.writeText(url); btn.textContent = "Copied, valid 6 hours"; } catch (e) { btn.textContent = "Copy the link below"; }
+  } catch (e) { $("player-note").textContent = "Could not make a link: " + e.message; }
+  finally { btn.disabled = false; }
+});
+
+// ---------- chats: New download starts one; earlier ones in the sidebar ----------
+const chatsMap = new Map();
+let currentChat = null, route = "chat", openSeq = 0;
+
+function when(iso) {
+  const d = new Date(iso); if (isNaN(d)) return "";
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+function renderChatList() {
+  const list = $("chat-list");
+  const sorted = [...chatsMap.values()].sort((a, b) => String(b.updated).localeCompare(String(a.updated)));
+  if (!sorted.length) { list.replaceChildren(el("li", { class: "chats-empty", text: "No chats yet." })); return; }
+  list.replaceChildren(...sorted.map((c) => el("li", {}, el("a", { href: "#chat/" + enc(c.id), "aria-current": route === "chat" && c.id === currentChat ? "page" : null },
+    el("span", { text: c.title || "New download" }), el("time", { datetime: c.updated, text: when(c.updated) })))));
+  if (route === "library") $("nav-library").setAttribute("aria-current", "page"); else $("nav-library").removeAttribute("aria-current");
+}
+
+function setHead(chat) {
+  const head = $("chat-head"), tools = $("chat-tools");
+  head.hidden = !chat; tools.replaceChildren();
+  if (!chat) return;
+  $("chat-title").textContent = chat.title || "New download";
+  const del = el("button", { type: "button", class: "btn", text: "Delete chat" });
+  del.addEventListener("click", () => {
+    del.hidden = true;
+    const no = el("button", { type: "button", class: "btn", text: "Keep" });
+    const yes = el("button", { type: "button", class: "btn", text: "Delete chat" });
+    const box = el("div", { class: "examples", role: "group", "aria-label": "Confirm delete chat" }, el("span", { class: "meta", text: "Delete this chat? Its downloads stay in the library." }), no, yes);
+    no.addEventListener("click", () => { box.remove(); del.hidden = false; del.focus(); });
+    yes.addEventListener("click", async () => {
+      yes.disabled = no.disabled = true;
+      try { await api("DELETE", "/api/chats/" + enc(chat.id)); chatsMap.delete(chat.id); renderChatList(); newChat(); }
+      catch (e) { yes.disabled = no.disabled = false; box.append(el("span", { class: "errtext", role: "alert", text: e.message })); }
+    });
+    tools.append(box); no.focus();
+  });
+  tools.append(del);
+}
+
+async function openChat(id) {
+  const seq = ++openSeq;
+  currentChat = id; cards.clear(); emptyEl = null; typing = null; earlier = null;
+  inner.replaceChildren(); renderChatList();
+  if (!id) { setHead(null); showEmpty(); return; }
+  setHead(chatsMap.get(id) || { id, title: "Loading…" });
+  inner.append(el("div", { class: "typing", text: "Loading this chat…" }));
+  try {
+    const d = await api("GET", "/api/chats/" + enc(id));
+    if (seq !== openSeq) return;
+    chatsMap.set(id, d.chat); setHead(d.chat); renderChatList();
+    inner.replaceChildren();
+    for (const ev of d.events || []) {
+      if (ev.type === "user") inner.append(el("div", { class: "msg user", text: String(ev.text || "") }));
+      else if (ev.type === "proposal") { const p = proposals.get(ev.id); if (p) { const c = ensureCard(p, inner); renderFoot(c); } }
+      else onChatEvent(ev);
+    }
+    if (!inner.children.length) showEmpty();
+    thread.scrollTop = thread.scrollHeight;
+  } catch (e) {
+    if (seq !== openSeq) return;
+    inner.replaceChildren(el("div", { class: "msg err", role: "alert", text: e.status === 404 ? "This chat no longer exists." : "Could not load this chat: " + e.message }));
+  }
+}
+
+function newChat() { if (location.hash && location.hash !== "#") location.hash = ""; else { route = "chat"; showRoute(); openChat(null); } input.focus(); }
+$("new-chat").addEventListener("click", newChat);
+
+// ---------- routing: #library, #chat/<id>, or a new chat ----------
+const shell = $("shell"), menuBtn = $("menu");
+function showRoute() {
+  $("view-library").hidden = route !== "library"; $("view-chat").hidden = route !== "chat";
+  shell.classList.remove("menu-open"); menuBtn.setAttribute("aria-expanded", "false");
+  renderChatList();
+}
+function onRoute() {
+  const h = location.hash.slice(1);
+  if (h === "library") { route = "library"; showRoute(); renderLibrary(); return; }
+  route = "chat"; showRoute();
+  const id = h.startsWith("chat/") ? decodeURIComponent(h.slice(5)) : null;
+  if (id !== currentChat || !id) openChat(id);
+}
+window.addEventListener("hashchange", onRoute);
+menuBtn.addEventListener("click", () => {
+  const open = shell.classList.toggle("menu-open"); menuBtn.setAttribute("aria-expanded", String(open));
+  if (open) $("new-chat").focus();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && shell.classList.contains("menu-open")) { shell.classList.remove("menu-open"); menuBtn.setAttribute("aria-expanded", "false"); menuBtn.focus(); } });
+
+// ---------- downloading now (in the library) ----------
+const dlRegion = $("dl-region"), dlCount = $("dl-count");
+const dlRows = new Map();     // job id -> {tr, key, refs}
+let dlTbody = null;
+const STATE_WORD = { queued: "Queued", running: "Downloading", done: "Done", error: "Failed", cancelled: "Cancelled" };
+const COLS = ["File", "State", "Progress", "Note", ""];
+const isLive = (j) => j.state === "queued" || j.state === "running";
+
+function jobName(j) {
+  const p = proposals.get(j.proposal_id), r = p && p.report;
+  return j.title || (r && (r.title || r.filename)) || j.url || "Download";
+}
+function updateCount() { const n = [...jobs.values()].filter(isLive).length; dlCount.textContent = n ? String(n) : ""; }
+
+function renderActive() {
+  // running and queued jobs, plus failures from the last day, so a failed download is not silently lost
+  const dayAgo = Date.now() - 864e5;
+  const list = [...jobs.values()].filter((j) => isLive(j) || (j.state === "error" && Date.parse(j.finished || j.created) > dayAgo))
+    .sort((a, b) => String(b.created).localeCompare(String(a.created)));
+  $("lib-active").hidden = !list.length;
+  if (!list.length) { dlRegion.replaceChildren(); dlTbody = null; dlRows.clear(); return; }
+  if (!dlTbody) {
+    dlTbody = el("tbody"); dlRows.clear();
+    dlRegion.replaceChildren(el("table", { class: "dl-table" },
+      el("thead", {}, el("tr", {}, COLS.map((h) => el("th", { scope: "col" }, h ? h : el("span", { class: "sr", text: "Actions" }))))), dlTbody));
+  }
+  const keep = new Set(list.map((j) => j.id));
+  for (const [id, row] of dlRows) if (!keep.has(id)) { row.tr.remove(); dlRows.delete(id); }
+  list.forEach((j, i) => { const row = dlRow(j); if (dlTbody.children[i] !== row.tr) dlTbody.insertBefore(row.tr, dlTbody.children[i] || null); });
+}
+
+
+function dlRow(j) {
+  let row = dlRows.get(j.id);
+  const key = j.state;
+  if (!row) { row = { tr: el("tr"), key: null, refs: null }; dlRows.set(j.id, row); }
+  if (row.key !== key) {
+    row.key = key; row.refs = null;
+    const live = j.state === "queued" || j.state === "running";
+    const td = (label, ...kids) => el("td", { "data-label": label }, el("div", { class: "cell" }, ...kids));
+    const prog = el("div", { class: "dl-prog" });
+    const msg = el("div", { class: "dl-saved" });
+    const act = [];
+    if (live) {
+      const bar = el("progress", { max: 100, "aria-label": "Progress of " + jobName(j) });
+      const fig = el("span", { class: "measured" }), hint = el("span", { class: "meta" });
+      prog.append(bar, fig, hint);
+      const cancel = el("button", { type: "button", text: "Cancel", "aria-label": "Cancel " + jobName(j),
+        onclick: () => cancelJob(jobs.get(j.id) || j, cancel, (m) => msg.replaceChildren(el("span", { class: "errtext", role: "alert", text: m }))) });
+      act.push(cancel);
+      row.refs = { bar, fig, hint };
+    } else if (j.state === "error") {
+      prog.append(el("span", { class: "measured", text: fmtBytes(j.downloaded || 0) + (j.size ? " of " + fmtBytes(j.size) : "") }));
+      msg.append(el("span", { class: "errtext", text: j.error || "unknown error" }));
+    } else {
+      prog.append(el("span", { class: "measured", text: fmtBytes(j.downloaded || 0) + (j.size ? " of " + fmtBytes(j.size) : "") }));
+    }
+    row.tr.replaceChildren(
+      td("File", el("div", { class: "dl-name", text: jobName(j) }), el("div", { class: "meta measured", text: hostOf(j.url) })),
+      td("State", el("span", { class: "state " + j.state, text: STATE_WORD[j.state] || j.state })),
+      td("Progress", prog), td("Note", msg), td("", ...act));
+  }
+  if (row.refs) {
+    setBar(row.refs.bar, j);
+    const p = progressParts(j);
+    row.refs.fig.textContent = p.figures; row.refs.hint.textContent = p.hint; row.refs.hint.hidden = !p.hint;
+  }
+  return row;
+}
+// A filesystem path that wraps only after a "/" (text nodes and <wbr>, no HTML strings).
+function pathEl(cls, text) {
+  const e = el("span", { class: cls, title: text });
+  String(text).split("/").forEach((part, i, all) => { e.append(part + (i < all.length - 1 ? "/" : "")); if (i < all.length - 1) e.append(document.createElement("wbr")); });
+  return e;
+}
+function hostOf(u) { try { return new URL(u).host || ""; } catch (e) { return ""; } }
+
+function toast(j) {
+  const name = j.title || (cards.get(j.proposal_id) && cards.get(j.proposal_id).p.report && cards.get(j.proposal_id).p.report.title) || j.url || "Download";
+  const msg = j.state === "done" ? "Finished: " + name : j.state === "error" ? "Failed: " + name + (j.error ? " (" + j.error + ")" : "") : "Cancelled: " + name;
+  const t = el("div", { class: "toast" }, el("div", {}, el("div", { text: msg }), j.state === "done" && j.path ? el("div", { class: "path", text: j.path }) : null));
+  const x = el("button", { type: "button", text: "Dismiss", "aria-label": "Dismiss notification", onclick: () => t.remove() });
+  t.append(x);
+  toasts.append(t);
+  setTimeout(() => t.remove(), j.state === "done" ? 12000 : 9000);
+}
+
+
+// ---------- state sync ----------
+let earlier = null; // kept for openChat's reset
+
+function applyProposal(p) {
+  proposals.set(p.id, Object.assign({}, proposals.get(p.id), p));
+  const c = cards.get(p.id);
+  if (c) { c.p = Object.assign({}, c.p, p); renderFoot(c); return; }
+  if (route === "chat" && p.chat_id && p.chat_id === currentChat) { const n = ensureCard(proposals.get(p.id)); renderFoot(n); }
 }
 
 function applyJob(j, fromEvent) {
@@ -365,62 +647,146 @@ function applyJob(j, fromEvent) {
   if (fromEvent && ["done", "error", "cancelled"].includes(j.state) && !toasted.has(j.id)) {
     toasted.add(j.id); toast(j);
   }
+  updateCount(); renderActive();
 }
 
-function toast(j) {
-  const name = j.title || (cards.get(j.proposal_id) && cards.get(j.proposal_id).p.report && cards.get(j.proposal_id).p.report.title) || j.url || "Download";
-  const msg = j.state === "done" ? "Finished: " + name : j.state === "error" ? "Failed: " + name + (j.error ? " (" + j.error + ")" : "") : "Cancelled: " + name;
-  const t = el("div", { class: "toast" }, el("div", {}, el("div", { text: msg }), j.state === "done" && j.path ? el("div", { class: "path", text: j.path }) : null));
-  const x = el("button", { type: "button", text: "Dismiss", "aria-label": "Dismiss notification", onclick: () => t.remove() });
-  t.append(x);
-  toasts.append(t);
-  setTimeout(() => t.remove(), j.state === "done" ? 12000 : 9000);
+// ---------- sign in (only when the server sets MDM_TOKEN) ----------
+let needLogin = false;
+function showLogin() {
+  if (needLogin) return;
+  needLogin = true;
+  if (es) { es.close(); es = null; }
+  shell.hidden = true; $("login").hidden = false; $("signout").hidden = true;
+  $("token").focus();
 }
-
-let restored = false;
-async function restore() {
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const t = $("token"), help = $("login-help"), btn = $("login-btn");
+  if (!t.value) { t.setAttribute("aria-invalid", "true"); help.textContent = "Enter the access token."; t.focus(); return; }
+  btn.disabled = true; btn.setAttribute("aria-busy", "true");
   try {
-    const [ps, js] = await Promise.all([api("GET", "/api/proposals"), api("GET", "/api/jobs")]);
+    const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: t.value }) });
+    if (!r.ok) throw new Error(r.status === 401 ? "That token is not right. Check MDM_TOKEN in the server’s .env." : "Sign in failed (" + r.status + ").");
+    t.value = ""; t.removeAttribute("aria-invalid"); help.textContent = "";
+    needLogin = false; $("login").hidden = true; shell.hidden = false; $("signout").hidden = false;
+    try { localStorage.setItem("mdm-signed-in", "1"); } catch (e2) { /* private mode */ }
+    start();
+  } catch (err) { t.setAttribute("aria-invalid", "true"); help.textContent = err.message; t.focus(); }
+  finally { btn.disabled = false; btn.removeAttribute("aria-busy"); }
+});
+$("signout").addEventListener("click", async () => {
+  try { await fetch("/api/logout", { method: "POST" }); } catch (e) { /* ignore */ }
+  try { localStorage.removeItem("mdm-signed-in"); } catch (e) { /* ignore */ }
+  location.hash = ""; showLogin();
+});
+
+// ---------- start, then live updates ----------
+let es = null;
+async function start() {
+  try {
+    const [cs, ps, js, its] = await Promise.all([api("GET", "/api/chats"), api("GET", "/api/proposals"), api("GET", "/api/jobs"), api("GET", "/api/library")]);
+    cs.forEach((c) => chatsMap.set(c.id, c));
+    ps.forEach((p) => proposals.set(p.id, p));
     js.forEach((j) => { jobs.set(j.id, j); if (["done", "error", "cancelled"].includes(j.state)) toasted.add(j.id); });
-    const sorted = ps.slice().sort((a, b) => String(a.created).localeCompare(String(b.created)));
-    sorted.forEach((p) => applyProposal(p, true));
-    if (sorted.length && earlier) earlier.prepend(el("div", { class: "divider", text: "Earlier previews and downloads" }));
-    restored = true;
-  } catch (e) { /* server not ready; events stream will resync */ }
-  if (!cards.size && !inner.children.length) showEmpty();
+    its.forEach((it) => items.set(it.id, it));
+    libState = "full";
+  } catch (e) {
+    if (e.status === 401) return; // the sign-in form is up
+    libState = "error";
+  }
+  try { if (localStorage.getItem("mdm-signed-in")) $("signout").hidden = false; } catch (e) { /* ignore */ }
+  currentChat = undefined; // force the route to (re)open its chat with the loaded proposals
+  onRoute(); renderLibrary();
+  connectEvents(); health();
 }
 
 function connectEvents() {
-  const es = new EventSource("/api/events");
-  // Resync on EVERY open (incl. the first) so nothing that changed before the stream attached is missed;
-  // if the initial restore failed, retry it instead so earlier cards appear without toasting old jobs.
-  es.onopen = () => { if (restored) resync(); else restore(); };
+  if (es) es.close();
+  let opened = false;
+  es = new EventSource("/api/events");
+  // Resync on every reopen so nothing that changed while the stream was down is missed.
+  es.onopen = () => { if (opened) resync(); opened = true; };
   es.onmessage = (m) => {
     let ev; try { ev = JSON.parse(m.data); } catch (e) { return; }
     if (ev.type === "proposal" && ev.proposal) applyProposal(ev.proposal);
     else if ((ev.type === "job" || ev.type === "job_done") && ev.job) applyJob(ev.job, true);
+    else if (ev.type === "item" && ev.item) applyItem(ev.item);
   };
 }
 async function resync() {
   try {
-    const [ps, js] = await Promise.all([api("GET", "/api/proposals"), api("GET", "/api/jobs")]);
+    const [ps, js, its] = await Promise.all([api("GET", "/api/proposals"), api("GET", "/api/jobs"), api("GET", "/api/library")]);
+    ps.forEach((p) => applyProposal(p));
     js.forEach((j) => applyJob(j, true));
-    ps.forEach((p) => { if (cards.has(p.id)) applyProposal(p); });
+    its.forEach((it) => items.set(it.id, it)); renderLibrary();
   } catch (e) { /* ignore */ }
 }
 
+// ---------- markdown for the agent's replies: DOM nodes only, never HTML strings ----------
+// ponytail: the subset the model writes (paragraphs, headings, lists, tables, code, bold, italic, links); add more when it writes more
+function mdInline(text) {
+  const out = [], re = /(`[^`]+`)|(\*\*(?:[^*]|\*(?!\*))+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\((https?:\/\/[^\s)]+)\))|(https?:\/\/[^\s<>()|]+)/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const t = m[0];
+    if (m[1]) out.push(el("code", { text: t.slice(1, -1) }));
+    else if (m[2]) out.push(el("strong", {}, mdInline(t.slice(2, -2))));
+    else if (m[3]) out.push(el("em", {}, mdInline(t.slice(1, -1))));
+    else if (m[4]) out.push(el("a", { href: m[5], target: "_blank", rel: "noopener noreferrer" }, mdInline(t.slice(1, t.indexOf("](")))));
+    else out.push(el("a", { href: t, target: "_blank", rel: "noopener noreferrer", text: t }));
+    last = m.index + t.length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+function md(src) {
+  const lines = src.replace(/\r/g, "").split("\n"), out = [];
+  const cells = (l) => l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (!l.trim()) { i++; continue; }
+    if (/^```/.test(l)) { const code = []; i++; while (i < lines.length && !/^```/.test(lines[i])) code.push(lines[i++]); i++; out.push(el("pre", {}, el("code", { text: code.join("\n") }))); continue; }
+    let h = /^(#{1,6})\s+(.*)$/.exec(l);
+    if (h) { out.push(el(h[1].length <= 2 ? "h4" : "h5", {}, mdInline(h[2]))); i++; continue; }
+    if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(l)) { out.push(el("hr")); i++; continue; }
+    if (/^\s*\|/.test(l) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
+      const head = cells(l); i += 2; const rows = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(cells(lines[i++]));
+      out.push(el("div", { class: "md-table" }, el("table", {},
+        el("thead", {}, el("tr", {}, head.map((c) => el("th", { scope: "col" }, mdInline(c))))),
+        el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c) => el("td", {}, mdInline(c)))))))));
+      continue;
+    }
+    const li = /^\s*([-*+]|\d+[.)])\s+/;
+    if (li.test(l)) {
+      const ordered = /^\s*\d/.test(l), list = el(ordered ? "ol" : "ul");
+      while (i < lines.length && li.test(lines[i])) list.append(el("li", {}, mdInline(lines[i++].replace(li, ""))));
+      out.push(list); continue;
+    }
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !/^(```|#{1,6}\s|\s*\|)/.test(lines[i]) && !li.test(lines[i])) para.push(lines[i++].trim());
+    if (!para.length) { out.push(el("p", {}, mdInline(lines[i++]))); continue; }
+    const pe = el("p"); para.forEach((t, k) => { if (k) pe.append(el("br")); pe.append(...mdInline(t)); }); out.push(pe);
+  }
+  return out;
+}
+
+// ---------- chat ----------
 // ---------- chat ----------
 let busy = false;
 function setBusy(b) {
   busy = b; input.disabled = b; sendBtn.disabled = b;
+  if (b) sendBtn.setAttribute("aria-busy", "true"); else sendBtn.removeAttribute("aria-busy");
   if (!b) { input.focus(); }
 }
 
 function onChatEvent(ev) {
   switch (ev.type) {
-    case "tool_step": add(el("div", { class: "chip", text: stepText(ev) })); break;
-    case "proposal": if (ev.proposal) applyProposal(ev.proposal); break;
-    case "text": add(el("div", { class: "msg bot", text: String(ev.text || "") })); break;
+    case "tool_step": { const s = stepText(ev); add(el("div", { class: "step" }, el("span", { text: s.base }), s.detail ? el("span", { class: "measured", text: s.detail }) : null)); break; }
+    case "proposal": if (ev.proposal) { proposals.set(ev.proposal.id, ev.proposal); renderFoot(ensureCard(ev.proposal)); } break;
+    case "text": add(el("div", { class: "msg bot md" }, md(String(ev.text || "")))); break;
     case "error": add(el("div", { class: "msg err", role: "alert", text: String(ev.message || "Something went wrong.") })); break;
   }
 }
@@ -428,12 +794,23 @@ function onChatEvent(ev) {
 async function sendMessage() {
   const text = input.value.trim();
   if (!text || busy) return;
+  if (!currentChat) {
+    // the first message of a New download makes its chat; the URL follows without reopening it
+    try {
+      const c = await api("POST", "/api/chats");
+      chatsMap.set(c.id, c); currentChat = c.id;
+      history.replaceState(null, "", location.pathname + location.search + "#chat/" + enc(c.id));
+    } catch (e) { if (e.status !== 401) onChatEvent({ type: "error", message: "Could not start a chat: " + e.message }); return; }
+  }
+  const cid = currentChat, chat = chatsMap.get(cid);
+  if (chat && (!chat.title || chat.title === "New download")) chat.title = text.slice(0, 60);
+  if (chat) { chat.updated = new Date().toISOString(); setHead(chat); renderChatList(); }
   input.value = ""; autosize();
   add(el("div", { class: "msg user", text }));
   setBusy(true); showTyping();
   let sawDone = false;
   try {
-    const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session: SESSION, message: text }) });
+    const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session: cid, message: text }) });
     if (!r.ok) {
       let d = ""; try { const j = await r.json(); d = typeof j.detail === "string" ? j.detail : ""; } catch (e) { /* ignore */ }
       throw new Error(d || "Request failed (" + r.status + ")");
@@ -450,15 +827,18 @@ async function sendMessage() {
         for (const line of block.split("\n")) {
           if (!line.startsWith("data:")) continue;
           let ev; try { ev = JSON.parse(line.slice(5)); } catch (e) { continue; }
-          if (ev.type === "done") sawDone = true; else onChatEvent(ev);
+          if (ev.type === "done") sawDone = true;
+          else if (ev.type === "proposal" && ev.proposal) { proposals.set(ev.proposal.id, ev.proposal); if (currentChat === cid) onChatEvent(ev); }
+          else if (currentChat === cid) onChatEvent(ev); // the transcript is saved server-side either way
         }
       }
     }
-    if (!sawDone) onChatEvent({ type: "error", message: "The connection ended before the reply finished." });
+    if (!sawDone && currentChat === cid) onChatEvent({ type: "error", message: "The connection ended before the reply finished." });
   } catch (e) {
-    onChatEvent({ type: "error", message: e.message || "Could not reach the server." });
+    if (currentChat === cid) onChatEvent({ type: "error", message: e.message || "Could not reach the server." });
   } finally {
     hideTyping(); setBusy(false);
+    api("GET", "/api/chats").then((cs) => { cs.forEach((c) => chatsMap.set(c.id, c)); renderChatList(); }).catch(() => {});
   }
 }
 
@@ -470,6 +850,7 @@ input.addEventListener("keydown", (e) => {
 $("composer").addEventListener("submit", (e) => { e.preventDefault(); sendMessage(); });
 
 // ---------- health banner ----------
+
 async function health() {
   try {
     const h = await api("GET", "/api/health");
@@ -481,9 +862,9 @@ async function health() {
   } catch (e) { /* ignore */ }
 }
 
-restore().then(connectEvents);
-health();
-input.focus();
+renderLibrary();
+start();
+if (!location.hash) input.focus();
 </script>
 </body>
 </html>
