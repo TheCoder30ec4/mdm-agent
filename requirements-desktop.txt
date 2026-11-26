@@ -1,0 +1,6 @@
+# The desktop app (desktop/app.py) and its build, on top of requirements.txt.
+# pywebview pulls pyobjc on macOS and pythonnet (WebView2) on Windows by itself.
+pywebview>=5.3
+pystray>=0.19.5
+pillow>=10
+pyinstaller>=6.10

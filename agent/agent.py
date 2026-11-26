@@ -1,28 +1,28 @@
-"""Download assistant on Deep Agents (LangGraph) with Groq gpt-oss-120b.
+"""Download assistant on Deep Agents (LangGraph). The model comes from Settings (agent/llm.py); Groq gpt-oss-120b by default.
 
 Safety: no tool here can start a download (propose_download only creates a pending proposal), and a gate
 middleware hides and blocks every tool the harness adds by default (shell `execute`, filesystem tools).
 """
 import inspect as pyinspect
 import json
-import os
 import re
+from pathlib import Path
 
 from deepagents import (GeneralPurposeSubagentProfile, HarnessProfile, create_deep_agent,  # Deep Agents harness
                         register_harness_profile)
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool
-from langchain_groq import ChatGroq  # Groq: openai/gpt-oss-120b
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.errors import GraphRecursionError
 from pydantic import create_model
 
 from agent import inspect as inspect_mod
+from agent import llm as llm_mod
+from agent import settings as settings_mod
 from agent import web as web_mod
 from agent.prompts import RESEARCHER_PROMPT, SYSTEM_PROMPT
 
-DEFAULT_MODEL = "openai/gpt-oss-120b"
 MAX_TOOL_CHARS = 6000
 MAX_PROPOSALS = 10  # matches the system prompt
 MAIN_TOOLS = frozenset({"inspect_link", "propose_download", "job_status", "list_jobs", "task"})
@@ -93,23 +93,29 @@ def _gate(allowed):
 
 
 class Agent:
-    def __init__(self, jobs, llm=None, model=None, max_steps=25):
+    def __init__(self, jobs, llm=None, model=None, max_steps=25, settings_path=None):
         self.jobs = jobs
-        self._llm = llm  # any LangChain chat model; default is Groq (created lazily)
-        self.model = model or os.environ.get("GROQ_MODEL") or DEFAULT_MODEL
+        self._fixed = llm  # any LangChain chat model; otherwise built from Settings
+        self.model = model  # overrides the Settings model
         self.max_steps = max_steps
+        lib = getattr(jobs, "library_dir", None)
+        self.settings_path = settings_path or (lib / "settings.json" if isinstance(lib, Path) else None)
+        self._built = (None, None)  # (config it was built from, model)
         self._web = None
         self._inspect = None
 
-    # the Groq model is built on first use, so importing this module needs no key
+    # built on first use, so importing this module needs no key; rebuilt when Settings change.
+    # A chat already running keeps the model its graph was built with.
     @property
     def llm(self):
-        if self._llm is None:
-            key = os.environ.get("GROQ_API_KEY")
-            if not key:
-                raise RuntimeError("GROQ_API_KEY is not set. Copy .env.example to .env, add your key, and restart the server.")
-            self._llm = ChatGroq(model=self.model, api_key=key, temperature=0.2, max_retries=2)
-        return self._llm
+        if self._fixed is not None:
+            return self._fixed
+        cfg = settings_mod.effective(self.settings_path)
+        if self.model:
+            cfg["model"] = self.model
+        if self._built[0] != cfg:
+            self._built = (cfg, llm_mod.make(cfg))
+        return self._built[1]
 
     @property
     def web(self):  # tests swap in a fake via self._web
@@ -192,8 +198,11 @@ class Agent:
 
     def build(self, events, run=None, checkpointer=None):
         """The compiled LangGraph agent for one run."""
-        # no auto-added general-purpose sub-agent: only the researcher below
-        register_harness_profile("groq", HarnessProfile(general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)))
+        # no auto-added general-purpose sub-agent: only the researcher below. deepagents keys harness profiles
+        # by the model's LangSmith provider (groq, anthropic, openai, google_genai, ...), so register that one.
+        model = self.llm
+        register_harness_profile(_provider(model), HarnessProfile(
+            general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)))
         main, research = self._tools(events, {} if run is None else run)
         researcher = {
             "name": "researcher",
@@ -203,7 +212,7 @@ class Agent:
             "tools": research,
             "middleware": [_gate(RESEARCH_TOOLS)],
         }
-        return create_deep_agent(model=self.llm, tools=main, system_prompt=SYSTEM_PROMPT,
+        return create_deep_agent(model=model, tools=main, system_prompt=SYSTEM_PROMPT,
                                  subagents=[researcher], middleware=[_gate(MAIN_TOOLS)], checkpointer=checkpointer)
 
     # ---- run: streams chat events (contracts/events.md) ----
@@ -290,6 +299,14 @@ class Agent:
                                "args": {k: _trim(v, 200) for k, v in (c.get("args") or {}).items()}}
             while events:
                 yield events.pop(0)
+
+
+def _provider(model):
+    """The provider name deepagents looks harness profiles up by (BaseChatModel._get_ls_params)."""
+    try:
+        return model._get_ls_params().get("ls_provider") or type(model).__name__.lower()
+    except Exception:
+        return type(model).__name__.lower()
 
 
 _LINK = re.compile(r"""(?:https?|ftps?)://[^\s<>"']+|magnet:\?[^\s<>"']+""", re.I)

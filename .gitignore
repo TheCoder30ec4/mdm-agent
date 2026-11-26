@@ -9,3 +9,5 @@ data
 .claude/
 .DS_Store
 library/
+build/
+dist/

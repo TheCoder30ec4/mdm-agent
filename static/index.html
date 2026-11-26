@@ -27,6 +27,7 @@
     <a class="side-link" id="nav-library" href="#library">Library <span class="count measured" id="dl-count" aria-label="downloads running"></span></a>
     <h2 id="chats-h">Chats</h2>
     <ul class="chats" id="chat-list" aria-labelledby="chats-h"></ul>
+    <button type="button" class="btn side-settings" id="open-settings" aria-haspopup="dialog">Settings</button>
   </nav>
 
   <div class="view" id="view-chat">
@@ -76,6 +77,38 @@
     <button type="button" id="player-link">Copy VLC link</button>
     <div class="linkbox" id="linkbox" hidden><label for="link-url" class="sr">Stream link for VLC</label><input id="link-url" readonly></div>
   </div>
+</dialog>
+<dialog class="player settings" id="settings" aria-labelledby="settings-title">
+  <div class="player-head"><h2 id="settings-title">Settings</h2><button type="button" id="settings-close">Close</button></div>
+  <form class="settings-body" id="settings-form" autocomplete="off" novalidate>
+    <label for="s-provider">AI provider</label>
+    <select id="s-provider"></select>
+    <label for="s-model">Model</label>
+    <input id="s-model" spellcheck="false" maxlength="500">
+    <div class="field" id="s-base-row" hidden>
+      <label for="s-base">Base URL</label>
+      <input id="s-base" type="url" spellcheck="false" maxlength="2000" placeholder="http://localhost:11434/v1" aria-describedby="s-base-help">
+      <p class="meta" id="s-base-help">Ollama, LM Studio, OpenRouter, vLLM or any OpenAI-compatible server.</p>
+    </div>
+    <label for="s-key">API key</label>
+    <input id="s-key" type="password" maxlength="2000" aria-describedby="s-key-help">
+    <p class="meta" id="s-key-help">Kept on this machine in the library folder. Leave empty to keep the saved key.</p>
+    <details>
+      <summary>Web search</summary>
+      <div class="field">
+        <label for="s-fc-url">Firecrawl URL</label>
+        <input id="s-fc-url" type="url" spellcheck="false" maxlength="2000" placeholder="http://localhost:3002">
+        <label for="s-fc-key">Firecrawl key</label>
+        <input id="s-fc-key" type="password" maxlength="2000" aria-describedby="s-fc-help">
+        <p class="meta" id="s-fc-help">Only for the Firecrawl cloud or a remote instance. Leave empty to keep the saved key.</p>
+      </div>
+    </details>
+    <p class="help" id="s-status" role="status" aria-live="polite"></p>
+    <div class="player-foot">
+      <button type="button" id="s-test">Test</button>
+      <button type="submit" class="primary" id="s-save">Save</button>
+    </div>
+  </form>
 </dialog>
 <div id="toasts" role="status" aria-live="polite"></div>
 
@@ -849,16 +882,76 @@ input.addEventListener("keydown", (e) => {
 });
 $("composer").addEventListener("submit", (e) => { e.preventDefault(); sendMessage(); });
 
+// ---------- settings: AI provider, model, key (key values never come back from the server) ----------
+const settingsDlg = $("settings");
+let settingsData = null;
+function setStatus(text, bad) { const st = $("s-status"); st.textContent = text; st.classList.toggle("bad", !!bad); }
+function providerInfo(id) { return (settingsData.providers || []).find((p) => p.id === id) || {}; }
+function syncProvider(resetModel) {
+  const id = $("s-provider").value, p = providerInfo(id);
+  if (resetModel) $("s-model").value = "";
+  $("s-model").placeholder = p.default_model || "Model name, e.g. llama3.1";
+  $("s-base-row").hidden = !p.needs_base_url;
+  $("s-key").value = "";
+  $("s-key").placeholder = settingsData.keys[id] ? "Saved" : (p.needs_key ? "" : "Optional");
+}
+function fillSettings(s) {
+  settingsData = s;
+  $("s-provider").replaceChildren(...s.providers.map((p) => el("option", { value: p.id, text: p.label })));
+  $("s-provider").value = s.provider;
+  $("s-model").value = s.model || "";
+  $("s-base").value = s.base_url || "";
+  $("s-fc-url").value = s.firecrawl_url || "";
+  $("s-fc-key").value = ""; $("s-fc-key").placeholder = s.firecrawl_key ? "Saved" : "";
+  syncProvider(false);
+}
+async function openSettings() {
+  setStatus("");
+  shell.classList.remove("menu-open"); menuBtn.setAttribute("aria-expanded", "false");
+  try { fillSettings(await api("GET", "/api/settings")); } catch (e) { if (e.status !== 401) { const b = $("banner"); b.replaceChildren("Could not load settings: " + e.message); b.hidden = false; } return; }
+  settingsDlg.showModal();
+}
+async function saveSettings() {
+  const body = { provider: $("s-provider").value, model: $("s-model").value.trim() };
+  if (providerInfo(body.provider).needs_base_url) body.base_url = $("s-base").value.trim();
+  if ($("s-key").value) body.api_key = $("s-key").value;
+  if ($("s-fc-url").value.trim() !== (settingsData.firecrawl_url || "")) body.firecrawl_url = $("s-fc-url").value.trim();
+  if ($("s-fc-key").value) body.firecrawl_key = $("s-fc-key").value;
+  fillSettings(await api("PUT", "/api/settings", body));
+  health();
+}
+async function withBusy(btn, fn) {
+  const btns = [$("s-test"), $("s-save")]; btns.forEach((b) => { b.disabled = true; }); btn.setAttribute("aria-busy", "true");
+  try { await fn(); } catch (e) { if (e.status !== 401) setStatus(e.message, true); }
+  finally { btns.forEach((b) => { b.disabled = false; }); btn.removeAttribute("aria-busy"); }
+}
+$("open-settings").addEventListener("click", openSettings);
+$("settings-close").addEventListener("click", () => settingsDlg.close());
+$("s-provider").addEventListener("change", () => syncProvider(true));
+$("settings-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  withBusy($("s-save"), async () => { setStatus("Saving…"); await saveSettings(); setStatus("Saved. The next message uses it."); });
+});
+$("s-test").addEventListener("click", () => withBusy($("s-test"), async () => {
+  setStatus("Saving, then asking the model to reply…"); // the test runs against the saved settings
+  await saveSettings();
+  const r = await api("POST", "/api/settings/test");
+  if (r.ok) setStatus("Works: the model replied."); else setStatus("Did not work: " + r.error, true);
+}));
+
 // ---------- health banner ----------
 
 async function health() {
   try {
     const h = await api("GET", "/api/health");
+    const b = $("banner"), parts = [];
+    if (!h.llm_ready) parts.push(el("span", { text: "Choose an AI provider in Settings (chat will not work until then). " }),
+      el("button", { type: "button", class: "btn", text: "Open Settings", onclick: openSettings }));
     const miss = [];
-    if (!h.groq_key) miss.push("GROQ_API_KEY is not set (chat will not work)");
-    if (!h.firecrawl) miss.push("Firecrawl is not reachable: run scripts/firecrawl_local.sh up (web search will not work)");
+    if (!h.firecrawl) miss.push("Firecrawl is not reachable: run scripts/firecrawl_local.sh up or set it under Settings, Web search (web search will not work)");
     if (!h.mdm_cli) miss.push("MDM CLI not found (downloads will fail)");
-    if (miss.length) { const b = $("banner"); b.textContent = "Setup needed: " + miss.join("; ") + "."; b.hidden = false; }
+    if (miss.length) parts.push(el("span", { text: miss.join("; ") + "." }));
+    if (parts.length) { b.replaceChildren("Setup needed: ", ...parts); b.hidden = false; } else { b.replaceChildren(); b.hidden = true; }
   } catch (e) { /* ignore */ }
 }
 

@@ -27,6 +27,20 @@ The model has no tool that starts a download. It can only create a *proposal*; o
 ```
 Creates the venv, installs dependencies, builds MDM (or installs the prebuilt one), starts Firecrawl if Docker is running, and opens http://127.0.0.1:8000. On the first run it creates `.env` and stops: add `GROQ_API_KEY` (and optionally `VIRUSTOTAL_API_KEY`), then run `./run.sh` again. Re-running is safe.
 
+## Desktop app (Mac and Windows)
+A double-click app: a window with the chat, and an icon in the menu bar (Mac) or the system tray (Windows) with **Open**, **Open library folder** and **Quit**. Closing the window only hides it (downloads keep going); Quit stops everything. Opening it again brings the running window back instead of starting a second copy. MDM is built in; nothing else to install.
+
+1. Download the zip: from the [Releases](../../releases) page (tagged versions), or from a run of the **Desktop app** workflow under Actions (its Artifacts). `MDM-Agent-macos-arm64.zip` is for Apple Silicon Macs, `MDM-Agent-windows-x64.zip` for 64-bit Windows.
+2. Unzip it. Mac: move `MDM Agent.app` to Applications. Windows: keep the `MDM Agent` folder together and start `MDM Agent.exe` inside it.
+3. The app is not signed, so the first start needs one extra step:
+   - **macOS**: right-click `MDM Agent.app`, choose **Open**, then **Open** again. If macOS only offers to move it to the Bin, open System Settings, Privacy & Security, and click **Open Anyway** next to MDM Agent.
+   - **Windows**: on the blue "Windows protected your PC" screen click **More info**, then **Run anyway**. Windows needs the Microsoft Edge WebView2 runtime, which Windows 10 and 11 normally have.
+4. Choose your AI provider in **Settings** (bottom of the sidebar): Groq, Anthropic, OpenAI, Google or any OpenAI-compatible server (Ollama, LM Studio), with its API key. Web search needs Firecrawl (a cloud key or your own URL) under Web search in the same dialog; without it, pasted links still download.
+
+The library (catalogue, downloaded files, posters and the settings) lives in `~/MDM Library` (Windows: `C:\Users\<you>\MDM Library`); the tray's **Open library folder** opens it. The app listens only on `127.0.0.1`, on a free port. Posters need `ffmpeg` on the PATH (Mac: `brew install ffmpeg`). If the app does not start, `.desktop.log` in the library folder says why.
+
+Build it yourself: `pip install -r requirements.txt -r requirements-desktop.txt`, build MDM (`bash scripts/build_mdm.sh`), then `MDM_BIN_DIR=<folder with misterdownloadmanager-cli and misterdownloadmanager> pyinstaller --noconfirm desktop/mdm-agent.spec`; the app is in `dist/`. From source without building: `python desktop/app.py`.
+
 ## Linux / server (Docker)
 ```sh
 scripts/firecrawl_local.sh up && docker compose up -d --build

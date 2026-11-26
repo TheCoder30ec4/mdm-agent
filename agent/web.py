@@ -1,7 +1,7 @@
 """Firecrawl search + scrape. Tolerates dict or object responses across SDK versions."""
-import os
-
 import httpx
+
+from agent import settings
 
 
 class WebError(Exception):
@@ -9,10 +9,12 @@ class WebError(Exception):
 
 
 def _client():
-    # Self-hosted Firecrawl by default (scripts/firecrawl_local.sh). A self-hosted API ignores the key;
-    # set FIRECRAWL_API_URL + FIRECRAWL_API_KEY to use another instance or the cloud.
-    url = os.environ.get("FIRECRAWL_API_URL") or "http://localhost:3002"
-    key = os.environ.get("FIRECRAWL_API_KEY") or "local"
+    # Self-hosted Firecrawl by default (scripts/firecrawl_local.sh). A self-hosted API ignores the key.
+    # Settings (Web search) first, then FIRECRAWL_API_URL / FIRECRAWL_API_KEY, for another instance or the cloud.
+    # ponytail: reads the default library's settings.json (LIBRARY_DIR), which is where Jobs() keeps it too
+    cfg = settings.effective(settings.default_path())
+    url = cfg["firecrawl_url"]
+    key = cfg["firecrawl_key"] or "local"
     try:
         from firecrawl import Firecrawl
     except ImportError:

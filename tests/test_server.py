@@ -292,7 +292,8 @@ def test_health_booleans_only(monkeypatch, env):
     monkeypatch.setenv("MDM_CLI", "/nonexistent/mdm")
     r = env[0].get("/api/health")
     assert "SENTINEL" not in r.text
-    assert r.json() == {"ok": True, "groq_key": True, "firecrawl": False, "mdm_cli": False}
+    assert r.json() == {"ok": True, "groq_key": True, "provider": "groq", "llm_ready": True, "firecrawl": False,
+                        "mdm_cli": False}
 
 
 def test_events_relays_and_unsubscribes(env):
@@ -541,3 +542,113 @@ def test_secret_file_reused(lib, tmp_path):
 def test_csp_allows_media_and_posters(env):
     csp = env[0].get("/").headers["content-security-policy"]
     assert "media-src 'self'" in csp and "img-src 'self'" in csp
+
+
+# ---- settings (contracts/settings.md) ----
+
+KEY = "gsk_SENTINEL_settings_key_0123456789"
+
+
+@pytest.fixture
+def st(tmp_path, monkeypatch):
+    for k in ("GROQ_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "MDM_PROVIDER", "MDM_MODEL",
+              "GROQ_MODEL", "MDM_BASE_URL", "FIRECRAWL_API_URL", "FIRECRAWL_API_KEY", "MDM_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    c = TestClient(server.create_app(jobs=StubJobs(tmp_path), agent=StubAgent()), base_url="http://127.0.0.1:8000")
+    return c, tmp_path
+
+
+def _no_key(text, key=KEY):
+    return all(key[i:i + 8] not in text for i in range(len(key) - 7))  # no 8-char run of the key
+
+
+def test_settings_get_defaults(st):
+    c, _ = st
+    s = c.get("/api/settings").json()
+    assert s["provider"] == "groq" and s["model"] == "openai/gpt-oss-120b" and s["keys"]["groq"] is False
+    assert s["firecrawl_key"] is False and {p["id"] for p in s["providers"]} == {"groq", "anthropic", "openai", "google", "compatible"}
+    assert c.get("/api/health").json()["llm_ready"] is False
+
+
+def test_settings_put_key_never_returned(st):
+    c, root = st
+    r = c.put("/api/settings", json={"provider": "anthropic", "api_key": KEY, "firecrawl_key": KEY + "fc"})
+    assert r.status_code == 200 and _no_key(r.text)
+    g = c.get("/api/settings")
+    assert _no_key(g.text) and g.json()["keys"]["anthropic"] is True and g.json()["firecrawl_key"] is True
+    assert g.json()["model"] == "claude-sonnet-5-5"
+    assert _no_key(c.get("/api/health").text)
+    assert json.loads((root / "settings.json").read_text())["keys"]["anthropic"] == KEY
+    assert (root / "settings.json").stat().st_mode & 0o777 == 0o600
+
+
+def test_settings_put_validation(st):
+    c, _ = st
+    assert c.put("/api/settings", json={"provider": "nope"}).status_code == 400
+    assert c.put("/api/settings", json={"base_url": "file:///etc/passwd"}).status_code == 400
+    assert c.put("/api/settings", json={"firecrawl_url": "ftp://x"}).status_code == 400
+    assert c.put("/api/settings", json={"unknown": 1}).status_code == 422
+    r = c.put("/api/settings", json={"provider": "compatible", "base_url": "http://localhost:11434/v1", "model": "llama3.1"})
+    assert r.json()["base_url"] == "http://localhost:11434/v1" and r.json()["model"] == "llama3.1"
+    h = c.get("/api/health").json()
+    assert h["provider"] == "compatible" and h["llm_ready"] is True
+
+
+def test_settings_cross_origin_and_login(st, monkeypatch):
+    c, root = st
+    r = c.put("/api/settings", json={"api_key": KEY}, headers={"Origin": "http://evil.example"})
+    assert r.status_code == 403 and not (root / "settings.json").exists()
+    monkeypatch.setenv("MDM_TOKEN", "t" * 40)
+    monkeypatch.setenv("MDM_SECRET", "s" * 40)
+    c2 = TestClient(server.create_app(jobs=StubJobs(root), agent=StubAgent()), base_url="http://127.0.0.1:8000")
+    assert c2.get("/api/settings").status_code == 401
+    assert c2.put("/api/settings", json={"api_key": KEY}).status_code == 401
+    assert c2.post("/api/settings/test").status_code == 401
+
+
+def test_settings_test_uses_factory_and_hides_key(st, monkeypatch):
+    from agent import llm
+    c, _ = st
+    c.put("/api/settings", json={"provider": "openai", "api_key": KEY})
+    seen = {}
+
+    class Ok:
+        def invoke(self, prompt):
+            seen["prompt"] = prompt
+
+    def fake_make(cfg, timeout=None, max_retries=2):
+        seen.update(timeout=timeout, provider=cfg["provider"])
+        return Ok()
+
+    monkeypatch.setattr(llm, "make", fake_make)
+    assert c.post("/api/settings/test").json() == {"ok": True}
+    assert seen == {"timeout": 20, "provider": "openai", "prompt": "Reply with OK"}
+
+    class Leaky:
+        def invoke(self, prompt):
+            raise RuntimeError(f"bad request for key {KEY}; Incorrect API key provided: gsk_SE***6789")
+
+    monkeypatch.setattr(llm, "make", lambda cfg, **kw: Leaky())
+    r = c.post("/api/settings/test").json()
+    assert r["ok"] is False and r["error"] and _no_key(r["error"]) and "6789" not in r["error"]
+
+    class Denied(Exception):
+        status_code = 401
+
+    monkeypatch.setattr(llm, "make", lambda cfg, **kw: type("D", (), {"invoke": lambda s, p: (_ for _ in ()).throw(Denied(KEY))})())
+    assert c.post("/api/settings/test").json() == {"ok": False, "error": "The provider rejected the API key."}
+
+
+def test_settings_test_not_configured(st):
+    c, _ = st
+    r = c.post("/api/settings/test").json()
+    assert r["ok"] is False and "Settings" in r["error"]
+
+
+def test_env_only_groq_key_still_works(st, monkeypatch):
+    c, _ = st
+    monkeypatch.setenv("GROQ_API_KEY", KEY)
+    s = c.get("/api/settings")
+    assert s.json()["keys"]["groq"] is True and _no_key(s.text)
+    h = c.get("/api/health").json()
+    assert h["groq_key"] is True and h["llm_ready"] is True and h["provider"] == "groq"

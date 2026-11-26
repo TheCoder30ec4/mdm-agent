@@ -61,6 +61,28 @@ class LoginIn(BaseModel):
     token: str = Field(min_length=1, max_length=1000)
 
 
+class SettingsIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    provider: str | None = Field(None, max_length=50)
+    model: str | None = Field(None, max_length=500)
+    base_url: str | None = Field(None, max_length=2000)
+    api_key: str | None = Field(None, max_length=2000)
+    firecrawl_url: str | None = Field(None, max_length=2000)
+    firecrawl_key: str | None = Field(None, max_length=2000)
+
+
+def _short_error(e: Exception, secrets_: list) -> str:
+    """A model-call failure for the UI: short, and never containing a key (providers echo masked keys too)."""
+    if getattr(e, "status_code", None) in (401, 403) or type(e).__name__ in ("AuthenticationError", "PermissionDeniedError"):
+        return "The provider rejected the API key."
+    msg = f"{type(e).__name__}: {e}"
+    for k in secrets_:
+        if k:
+            msg = msg.replace(k, "[key]")
+    msg = re.sub(r"\S*\*{3,}\S*", "[key]", msg)  # e.g. "Incorrect API key provided: sk-ab***wxyz"
+    return msg[:200]
+
+
 def access_config() -> dict:
     """Hosts and token from the environment. ALLOWED_HOSTS without MDM_TOKEN is refused."""
     extra = {h.strip().lower() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()}
@@ -135,6 +157,10 @@ def create_app(jobs=None, agent=None) -> FastAPI:
 
                 state["agent"] = Agent(j)
             return state["agent"]
+
+    def settings_path():
+        lib = get_jobs().library_dir
+        return Path(lib) / "settings.json" if lib else None
 
     def get_secret() -> bytes:
         """MDM_SECRET, else 32 random bytes kept in $LIBRARY_DIR/.secret (mode 600, created once)."""
@@ -428,15 +454,45 @@ def create_app(jobs=None, agent=None) -> FastAPI:
 
         return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
 
+    # ---- settings (contracts/settings.md): key values are never returned ----
+    @app.get("/api/settings")
+    def get_settings():
+        from agent import settings
+        return settings.public(settings_path())
+
+    @app.put("/api/settings")
+    def put_settings(body: SettingsIn):
+        from agent import settings
+        try:  # the agent rebuilds its model on the next chat (it compares the settings it was built from)
+            return settings.update(settings_path(), body.model_dump(exclude_unset=True))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/api/settings/test")
+    def test_settings():
+        from agent import llm, settings
+        cfg = settings.effective(settings_path())
+        try:
+            llm.make(cfg, timeout=20, max_retries=0).invoke("Reply with OK")
+            return {"ok": True}
+        except Exception as e:
+            if isinstance(e, llm.NotConfigured):
+                return {"ok": False, "error": str(e)[:200]}
+            return {"ok": False, "error": _short_error(e, [*cfg["keys"].values(), cfg["firecrawl_key"]])}
+
     # ---- health ----
     @app.get("/api/health")
     def health():
+        from agent import settings
         from agent.mdm import cli_path
         mdm = cli_path()
+        cfg = settings.effective(settings_path())
         return {
             "ok": True,
-            "groq_key": bool(os.environ.get("GROQ_API_KEY")),
-            "firecrawl": _reachable(os.environ.get("FIRECRAWL_API_URL") or "http://localhost:3002"),
+            "groq_key": bool(cfg["keys"]["groq"]),
+            "provider": cfg["provider"],
+            "llm_ready": settings.ready(cfg),
+            "firecrawl": _reachable(cfg["firecrawl_url"]),
             "mdm_cli": bool(shutil.which(mdm) or os.path.isfile(mdm)),
         }
 

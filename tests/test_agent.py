@@ -243,6 +243,36 @@ def test_real_groq_build_offers_only_researcher_subagent():
     assert "- researcher:" in listed and "- general-purpose:" not in listed
 
 
+@pytest.mark.parametrize("cls,kw", [
+    ("langchain_anthropic.ChatAnthropic", {"model": "claude-sonnet-5-5"}),
+    ("langchain_anthropic.ChatAnthropic", {"model": "claude-sonnet-4-6"}),  # has a built-in exact-model profile
+    ("langchain_openai.ChatOpenAI", {"model": "gpt-5.1"}),
+    ("langchain_openai.ChatOpenAI", {"model": "llama3.1", "base_url": "http://localhost:11434/v1"}),  # compatible
+    ("langchain_google_genai.ChatGoogleGenerativeAI", {"model": "gemini-2.5-flash"}),
+])
+def test_every_provider_build_offers_only_researcher_subagent(cls, kw):
+    import importlib
+    mod, name = cls.rsplit(".", 1)
+    model = getattr(importlib.import_module(mod), name)(api_key="not-a-key", **kw)  # no network
+    g = Agent(FakeJobs(), llm=model).build([])
+    desc = g.nodes["tools"].bound.tools_by_name["task"].description
+    listed = desc.split("Available agent types")[1].split("Specify subagent_type")[0]
+    assert "- researcher:" in listed and "- general-purpose:" not in listed
+
+
+def test_model_rebuilt_from_settings_on_next_chat(tmp_path, monkeypatch):
+    from agent import settings
+    for k in ("GROQ_API_KEY", "MDM_PROVIDER", "MDM_MODEL", "GROQ_MODEL", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "env-groq")
+    a = Agent(FakeJobs(), settings_path=tmp_path / "settings.json")
+    first = a.llm
+    assert type(first).__name__ == "ChatGroq" and a.llm is first  # cached while settings are unchanged
+    settings.update(tmp_path / "settings.json", {"provider": "anthropic", "api_key": "a-key"})
+    m = a.llm
+    assert type(m).__name__ == "ChatAnthropic" and m.model == "claude-sonnet-5-5"
+
+
 def test_task_to_other_subagent_is_refused():
     a, m = make([tc("task", {"description": "x", "subagent_type": "general-purpose"}), AIMessage(content="ok")])
     run(a)

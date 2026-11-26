@@ -244,6 +244,24 @@ dialog::backdrop { background: color-mix(in oklab, var(--color-paper-3) 82%, tra
 .linkbox input { flex: 1; min-width: 0; min-height: 40px; padding: 0 var(--space-sm); border: var(--rule-hair) solid var(--color-muted); border-radius: var(--radius-pill); background: var(--color-paper-3); color: var(--color-ink); font-family: var(--font-outlier); font-size: var(--text-sm); outline: 2px solid transparent; outline-offset: -3px; }
 .linkbox input:focus-visible { outline-color: var(--color-focus); }
 
+/* ---------- settings: the player dialog's frame, a form inside ---------- */
+.side-settings { margin-top: auto; }
+.settings { width: min(34rem, 94vw); }
+.settings-body { display: grid; gap: var(--space-xs); padding: var(--space-md); }
+.settings-body .field { display: grid; gap: var(--space-xs); }
+.settings-body label { margin-top: var(--space-2xs); font-size: var(--text-sm); color: var(--color-ink-2); }
+.settings-body input, .settings-body select { width: 100%; min-height: 40px; padding: 0 var(--space-sm); border: var(--rule-hair) solid var(--color-muted); border-radius: var(--radius-pill); background: var(--color-paper-3); color: var(--color-ink); outline: 2px solid transparent; outline-offset: -3px; }
+.settings-body input::placeholder { color: var(--color-muted); }
+.settings-body input:focus-visible, .settings-body select:focus-visible { outline-color: var(--color-focus); }
+.settings-body details { margin-top: var(--space-xs); padding-top: var(--space-xs); border-top: var(--rule-hair) solid var(--color-rule); }
+.settings-body summary { min-height: 40px; display: flex; align-items: center; cursor: pointer; color: var(--color-ink-2); }
+.settings-body summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.settings-body .help { min-height: 1lh; font-size: var(--text-sm); color: var(--color-ink-2); }
+.settings-body .help.bad { color: var(--color-error); }
+.settings-body .player-foot { justify-content: flex-end; padding: var(--space-xs) 0 0; }
+.player button:focus-visible, .btn:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+#banner .btn { min-height: 32px; margin-left: var(--space-xs); padding: 0 var(--space-sm); font-size: var(--text-sm); }
+
 /* ---------- login ---------- */
 .login { display: grid; place-items: center; padding: var(--space-xl) var(--space-md); }
 .login form { display: grid; gap: var(--space-sm); width: min(22rem, 100%); }
