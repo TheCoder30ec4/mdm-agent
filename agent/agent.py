@@ -25,6 +25,8 @@ from agent.prompts import RESEARCHER_PROMPT, SYSTEM_PROMPT
 
 MAX_TOOL_CHARS = 6000
 MAX_PROPOSALS = 10  # matches the system prompt
+MAX_SEARCHES = 3  # per user request, across every researcher call: precise and fast, not exhaustive
+MAX_SCRAPES = 5
 MAIN_TOOLS = frozenset({"inspect_link", "propose_download", "job_status", "list_jobs", "task"})
 RESEARCH_TOOLS = frozenset({"web_search", "web_scrape"})
 STEP_NAMES = {"task": "research"}  # what the UI shows for the sub-agent hand-off
@@ -138,6 +140,18 @@ class Agent:
         """Fresh tool set per run: holds that run's inspect cache, proposal count and event list."""
         cache = run.setdefault("cache", {})
         state = run.setdefault("state", {"proposals": 0})
+        web_cache = run.setdefault("web", {})  # (tool, args) -> result: a repeated search or page read is free
+        used = run.setdefault("used", {"web_search": 0, "web_scrape": 0})
+
+        def budget(tool, key, cap, fn):
+            if (tool, key) in web_cache:
+                return web_cache[(tool, key)]
+            if used[tool] >= cap:
+                return {"error": f"limit reached: {cap} {tool} calls per request. Stop researching and return the "
+                                 "candidates you already have."}
+            used[tool] += 1
+            web_cache[(tool, key)] = r = fn()
+            return r
 
         def safe(fn):
             def run(**kw):
@@ -151,14 +165,17 @@ class Agent:
 
         def web_search(query: str, limit: int = 5):
             """Search the web. Returns a list of {title, url, description}."""
-            res = self.web.search(query, min(max(int(limit), 1), 10))
-            return [{**r, "description": _trim(r.get("description"), 300)} for r in res]
+            n = min(max(int(limit), 1), 10)
+            return budget("web_search", (" ".join(str(query).lower().split()), n), MAX_SEARCHES, lambda: [
+                {**r, "description": _trim(r.get("description"), 300)} for r in self.web.search(query, n)])
 
         def web_scrape(url: str):
             """Fetch a web page as text (markdown, truncated)."""
-            r = dict(self.web.scrape(url))
-            r["text"] = _trim(r.get("text"), 4000)
-            return r
+            def read():
+                r = dict(self.web.scrape(url))
+                r["text"] = _trim(r.get("text"), 4000)
+                return r
+            return budget("web_scrape", str(url).strip().rstrip("/"), MAX_SCRAPES, read)
 
         def inspect_link(url: str):
             """Inspect a download link (HEAD only): size, type, files, and a safety verdict. Never downloads."""

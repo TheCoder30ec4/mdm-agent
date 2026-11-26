@@ -360,3 +360,30 @@ def test_pasted_video_page_downloads_in_video_mode():
     a2, _ = make([])
     evs, _ = run(a2, "https://archive.org/download/x/film.mp4")  # a plain file: no mode
     assert a2.jobs.opts == [{}]
+
+
+def test_research_budget_and_cache():
+    from agent.agent import MAX_SCRAPES, MAX_SEARCHES
+    calls = {"search": 0, "scrape": 0}
+
+    class CountingWeb(FakeWeb):
+        def search(self, q, limit=5):
+            calls["search"] += 1
+            return super().search(q, limit)
+
+        def scrape(self, url):
+            calls["scrape"] += 1
+            return super().scrape(url)
+
+    script = [tc("task", {"description": "find", "subagent_type": "researcher"})]
+    script += [tc("web_search", {"query": f"q{i}"}, 10 + i) for i in range(MAX_SEARCHES + 1)]
+    script += [tc("web_search", {"query": "  Q0 "}, 20)]                       # same search again: cached, free
+    script += [tc("web_scrape", {"url": f"https://a.test/{i}"}, 30 + i) for i in range(MAX_SCRAPES + 1)]
+    script += [tc("web_scrape", {"url": "https://a.test/0/"}, 40)]              # same page again: cached, free
+    script += [AIMessage(content="Candidates: none"), AIMessage(content="Nothing found.")]
+    a, m = make(script)
+    a._web = CountingWeb()
+    evs, _ = run(a)
+    assert calls == {"search": MAX_SEARCHES, "scrape": MAX_SCRAPES}
+    limits = {r["error"] for r in tool_results(m) if isinstance(r, dict) and "limit reached" in str(r.get("error"))}
+    assert {e.split(" calls")[0].rsplit(" ", 1)[1] for e in limits} == {"web_search", "web_scrape"}
