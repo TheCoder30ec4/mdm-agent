@@ -493,6 +493,7 @@ def create_app(jobs=None, agent=None) -> FastAPI:
             "provider": cfg["provider"],
             "llm_ready": settings.ready(cfg),
             "firecrawl": _reachable(cfg["firecrawl_url"]),
+            "web_search": "firecrawl" if _reachable(cfg["firecrawl_url"]) else "lite",  # agent/web.py engine()
             "mdm_cli": bool(shutil.which(mdm) or os.path.isfile(mdm)),
         }
 

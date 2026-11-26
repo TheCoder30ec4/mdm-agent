@@ -293,7 +293,7 @@ def test_health_booleans_only(monkeypatch, env):
     r = env[0].get("/api/health")
     assert "SENTINEL" not in r.text
     assert r.json() == {"ok": True, "groq_key": True, "provider": "groq", "llm_ready": True, "firecrawl": False,
-                        "mdm_cli": False}
+                        "web_search": "lite", "mdm_cli": False}
 
 
 def test_events_relays_and_unsubscribes(env):

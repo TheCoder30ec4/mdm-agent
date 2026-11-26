@@ -11,7 +11,7 @@ with reasons. Nothing downloads until you press **Download**. When it finishes y
   A main agent (inspect, propose, job status) hands web research to a `researcher` sub-agent (search, scrape).
   The harness's built-in shell and file tools are hidden from the model and refused at dispatch.
 - Brain: `openai/gpt-oss-120b` on [Groq](https://groq.com) via `langchain-groq` (too big to run on a laptop). The agents run locally.
-- Search and page previews: [Firecrawl](https://github.com/firecrawl/firecrawl), **self-hosted in Docker** on `127.0.0.1:3002`.
+- Search and page previews: [Firecrawl](https://github.com/firecrawl/firecrawl), **self-hosted in Docker** on `127.0.0.1:3002`. When no Firecrawl is reachable (the desktop app, or `./run.sh` without Docker), a built-in lite engine takes over: [ddgs](https://github.com/deedy5/ddgs) web search plus the Internet Archive's search and metadata APIs, and a guarded single-page fetch.
 - Downloads: MDM's headless CLI (`misterdownloadmanager-cli`), built from the fork: HTTP(S) and FTP with 16 parallel connections (`MDM_CONNECTIONS`), and magnet links.
 - Progress shows speed, time left, connections (or torrent peers) and why a download is slow.
 
@@ -35,7 +35,7 @@ A double-click app: a window with the chat, and an icon in the menu bar (Mac) or
 3. The app is not signed, so the first start needs one extra step:
    - **macOS**: right-click `MDM Agent.app`, choose **Open**, then **Open** again. If macOS only offers to move it to the Bin, open System Settings, Privacy & Security, and click **Open Anyway** next to MDM Agent.
    - **Windows**: on the blue "Windows protected your PC" screen click **More info**, then **Run anyway**. Windows needs the Microsoft Edge WebView2 runtime, which Windows 10 and 11 normally have.
-4. Choose your AI provider in **Settings** (bottom of the sidebar): Groq, Anthropic, OpenAI, Google or any OpenAI-compatible server (Ollama, LM Studio), with its API key. Web search needs Firecrawl (a cloud key or your own URL) under Web search in the same dialog; without it, pasted links still download.
+4. Choose your AI provider in **Settings** (bottom of the sidebar): Groq, Anthropic, OpenAI, Google or any OpenAI-compatible server (Ollama, LM Studio), with its API key. Web search works out of the box with the built-in lite engine (web results plus the Internet Archive's own search, pages read as plain text without JavaScript). For better results on script-heavy sites, add a Firecrawl cloud key or your own Firecrawl URL under Web search in the same dialog.
 
 The library (catalogue, downloaded files, posters and the settings) lives in `~/MDM Library` (Windows: `C:\Users\<you>\MDM Library`); the tray's **Open library folder** opens it. The app listens only on `127.0.0.1`, on a free port. Posters need `ffmpeg` on the PATH (Mac: `brew install ffmpeg`). If the app does not start, `.desktop.log` in the library folder says why.
 
@@ -65,7 +65,7 @@ bash scripts/build_mdm.sh       # builds MDM from the fork (release mode; needs 
 bash scripts/firecrawl_local.sh up    # needs Docker Desktop; first run pulls several GB. `down` stops it
 .venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8000
 ```
-Open http://127.0.0.1:8000. A banner tells you what is missing (Groq key, Firecrawl, MDM CLI).
+Open http://127.0.0.1:8000. A banner tells you what is missing (an AI provider, the MDM CLI).
 
 Tests: `.venv/bin/python -m pytest` (no network or keys needed).
 

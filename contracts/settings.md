@@ -64,8 +64,8 @@ The setup banner's "add GROQ_API_KEY" wording becomes "Choose an AI provider in 
   - `MDM Agent.app` zipped as `MDM-Agent-macos-arm64.zip`
   - `MDM Agent\` zipped as `MDM-Agent-windows-x64.zip`
 - **CI:** `.github/workflows/desktop.yml` runs on `workflow_dispatch` and on tags `v*`:
-  - matrix: macos-14 (arm64) and windows-latest (x64)
+  - matrix: macos-latest (arm64) and windows-latest (x64)
   - builds MDM from the submodule (`cargo build --locked --release -p mdm-app -p mdm-cli`), then PyInstaller
   - uploads the zips as artifacts, and attaches them to a GitHub Release on a tag
 - **Unsigned:** the README says how to open an unsigned app (macOS: right-click, then Open; Windows: More info, then Run anyway).
-- **Web search** works when Firecrawl is set in Settings (cloud key or URL). Without it, pasted links still work.
+- **Web search:** with no reachable Firecrawl, the built-in lite engine (`agent/weblite.py`) is used. It combines ddgs web search, the Internet Archive search and metadata APIs, and a guarded single-page fetch rendered as text with file links first (no JavaScript). A reachable Firecrawl URL or key in Settings takes over. `/api/health` reports `web_search: "firecrawl" | "lite"`.

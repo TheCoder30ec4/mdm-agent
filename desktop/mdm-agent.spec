@@ -13,7 +13,7 @@ ROOT = Path(SPECPATH).parent
 sys.path.insert(0, str(ROOT))  # so collect_submodules("agent") finds the repo's package
 EXE_SUFFIX = ".exe" if sys.platform == "win32" else ""
 
-mdm_dir = Path(os.environ.get("MDM_BIN_DIR") or ROOT / "vendor" / "mdm")
+mdm_dir = ROOT / os.environ.get("MDM_BIN_DIR", "vendor/mdm")  # relative to the repo root (an absolute path wins)
 mdm = [mdm_dir / f"misterdownloadmanager-cli{EXE_SUFFIX}", mdm_dir / f"misterdownloadmanager{EXE_SUFFIX}"]
 missing = [str(p) for p in mdm if not p.is_file()]
 if missing:
@@ -25,7 +25,7 @@ hiddenimports = collect_submodules("agent") + collect_submodules("uvicorn")
 
 # The agent stack imports lazily and ships data files (prompts, encodings); optional providers only if installed.
 for pkg in ("deepagents", "langchain", "langchain_core", "langgraph", "langchain_groq", "langchain_anthropic",
-            "langchain_openai", "langchain_google_genai", "tiktoken", "tiktoken_ext", "firecrawl", "webview"):
+            "langchain_openai", "langchain_google_genai", "tiktoken", "tiktoken_ext", "firecrawl", "webview", "ddgs", "primp", "lxml"):
     if importlib.util.find_spec(pkg) is not None:
         d, b, h = collect_all(pkg)
         datas += d

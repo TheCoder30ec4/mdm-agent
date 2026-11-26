@@ -100,7 +100,7 @@
         <input id="s-fc-url" type="url" spellcheck="false" maxlength="2000" placeholder="http://localhost:3002">
         <label for="s-fc-key">Firecrawl key</label>
         <input id="s-fc-key" type="password" maxlength="2000" aria-describedby="s-fc-help">
-        <p class="meta" id="s-fc-help">Only for the Firecrawl cloud or a remote instance. Leave empty to keep the saved key.</p>
+        <p class="meta" id="s-fc-help">Without a reachable Firecrawl, the built-in search is used (plain pages, no JavaScript). Set a Firecrawl here for better results. Leave the key empty to keep the saved one.</p>
       </div>
     </details>
     <p class="help" id="s-status" role="status" aria-live="polite"></p>
@@ -948,7 +948,6 @@ async function health() {
     if (!h.llm_ready) parts.push(el("span", { text: "Choose an AI provider in Settings (chat will not work until then). " }),
       el("button", { type: "button", class: "btn", text: "Open Settings", onclick: openSettings }));
     const miss = [];
-    if (!h.firecrawl) miss.push("Firecrawl is not reachable: run scripts/firecrawl_local.sh up or set it under Settings, Web search (web search will not work)");
     if (!h.mdm_cli) miss.push("MDM CLI not found (downloads will fail)");
     if (miss.length) parts.push(el("span", { text: miss.join("; ") + "." }));
     if (parts.length) { b.replaceChildren("Setup needed: ", ...parts); b.hidden = false; } else { b.replaceChildren(); b.hidden = true; }

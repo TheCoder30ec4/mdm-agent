@@ -8,6 +8,28 @@ class WebError(Exception):
     pass
 
 
+_ENGINE = {"at": 0.0, "url": None, "name": None}
+
+
+def engine() -> str:
+    """'firecrawl' when the configured Firecrawl accepts connections, else 'lite' (agent/weblite.py).
+    Checked at most every 30 s, and again at once when the configured URL changes."""
+    import socket
+    import time
+    from urllib.parse import urlsplit
+    url = settings.effective(settings.default_path())["firecrawl_url"]
+    now = time.monotonic()
+    if _ENGINE["url"] != url or now - _ENGINE["at"] > 30:
+        p = urlsplit(url or "")
+        try:
+            socket.create_connection((p.hostname, p.port or (443 if p.scheme == "https" else 80)), timeout=1).close()
+            name = "firecrawl"
+        except (OSError, TypeError, ValueError):
+            name = "lite"
+        _ENGINE.update(at=now, url=url, name=name)
+    return _ENGINE["name"]
+
+
 def _client():
     # Self-hosted Firecrawl by default (scripts/firecrawl_local.sh). A self-hosted API ignores the key.
     # Settings (Web search) first, then FIRECRAWL_API_URL / FIRECRAWL_API_KEY, for another instance or the cloud.
@@ -34,6 +56,12 @@ def _g(obj, name, default=None):
 
 
 def search(query: str, limit: int = 5) -> list[dict]:
+    if engine() == "lite":
+        from agent import weblite
+        try:
+            return weblite.search(query, limit)
+        except weblite.LiteError as e:
+            raise WebError(str(e)) from None
     try:
         res = _client().search(query, limit=limit)
         # v2: SearchData(.web); v1: {"data": [...]} or a plain list
@@ -73,6 +101,12 @@ def _guard(url: str) -> None:
 
 def scrape(url: str, max_chars: int = 8000) -> dict:
     _guard(url)
+    if engine() == "lite":
+        from agent import weblite
+        try:
+            return weblite.scrape(url, max_chars)
+        except weblite.LiteError as e:
+            raise WebError(str(e)) from None
     try:
         res = _client().scrape(url, formats=["markdown"])
         res = _g(res, "data", res)  # v1 wraps in "data" on some versions
